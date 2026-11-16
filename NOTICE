@@ -1,0 +1,12 @@
+NetHack Mobile is an unofficial, modified port of NetHack.
+The application and port code are distributed under the NetHack General
+Public License in LICENSE. Original copyrights and notices are preserved
+in vendor/nethack. The NetHack DevTeam does not endorse this port.
+
+NetHack: https://github.com/NetHack/NetHack
+Godot Engine: MIT license; see https://godotengine.org/license/
+godot-cpp: MIT license; see vendor/godot-cpp/LICENSE.md
+Lua 5.4.8: MIT license; see vendor/lua/doc/readme.html
+
+Upstream standard tile artwork is included under its original notices.
+Every distributed build must include these notices and its matching source.

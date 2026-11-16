@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/NetHack/NetHack",
+  "tag": "NetHack-5.0.0_Released",
+  "commit": "16ff59115315917b93185d026aeefea06db9b0f4",
+  "archive_sha256": "2981b40f58602df559d03e5df4ea60663e10bdfc25ee3435344bee9ae6be9bae",
+  "tree_sha256": "b8a0884778f3b7ebddc878fe8c072c4fc739bf64bce5ba704f9f68bfae0e15ad"
+}

@@ -1,0 +1,13 @@
+.DS_Store
+build/
+dist/
+.godot/
+godot/.godot/
+godot/bin/
+godot/data/
+*.pyc
+__pycache__/
+*.keystore
+*.jks
+.env
+godot/export_credentials.cfg
