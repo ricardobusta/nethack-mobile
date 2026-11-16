@@ -42,6 +42,23 @@ if __name__ == '__main__':
     with tempfile.TemporaryFile() as source:
         subprocess.run(['git', 'archive', '--format=tar', '--prefix=nethack-mobile/', 'HEAD'], cwd=ROOT, stdout=source, check=True)
         source.seek(0)
+        expected = {'nethack': json.loads((ROOT / 'upstream.lock.json').read_text())['tree_sha256']}
+        expected.update({name: dep['tree_sha256'] for name, dep in json.loads((ROOT / 'dependencies.lock.json').read_text()).items()})
+        with tarfile.open(fileobj=source, mode='r:') as snapshot:
+            members = sorted((m for m in snapshot.getmembers() if m.isfile()), key=lambda m: m.name)
+            for name, checksum in expected.items():
+                prefix = 'nethack-mobile/vendor/' + name + '/'
+                digest = hashlib.sha256()
+                for member in members:
+                    if member.name.startswith(prefix):
+                        relative = member.name[len(prefix):]
+                        if Path(relative).name == '.DS_Store' or '__pycache__' in Path(relative).parts:
+                            continue
+                        digest.update(relative.encode() + b'\0')
+                        digest.update(snapshot.extractfile(member).read())
+                if digest.hexdigest() != checksum:
+                    raise SystemExit('Committed vendor snapshot differs from lock: ' + name + '. Include original files ignored by upstream before packaging.')
+        source.seek(0)
         with tarfile.open(fileobj=source, mode='a') as tar:
             entry = tarfile.TarInfo('nethack-mobile/SOURCE_REVISION')
             contents = (revision + '\n').encode(); entry.size = len(contents)
