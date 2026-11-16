@@ -43,8 +43,7 @@ python3 scripts/export.py aab
 ```
 
 Native Android builds target API 26 and use 16 KB ELF segment alignment.
-The AAB preset sets minimum SDK 26 and target SDK 36. The non-Gradle debug
-APK uses the SDK levels embedded in Godot's template.
+Both Gradle export presets set minimum SDK 26 and target SDK 36.
 
 ## Play
 

@@ -23,7 +23,7 @@ if __name__ == '__main__':
         if missing:
             parser.error('Missing signing environment variables: ' + ', '.join(missing))
     (ROOT / 'dist').mkdir(exist_ok=True)
-    if args.format == 'aab':
+    if args.format in ('apk', 'aab'):
         build = ROOT / 'godot/android/build'
         if not (build / 'build.gradle').exists():
             templates = Path(os.environ.get('GODOT_EXPORT_TEMPLATES', Path.home() / 'Library/Application Support/Godot/export_templates/4.7.1.stable'))
@@ -32,7 +32,8 @@ if __name__ == '__main__':
                 archive.extractall(build)
             (build.parent / '.build_version').write_text('4.7.1.stable\n')
             (build / 'gradlew').chmod(0o755)
-        sdk = os.environ.get('NETHACK_ANDROID_SDK', os.environ.get('ANDROID_HOME', ''))
+        user_sdk = Path.home() / 'Library/Android/sdk'
+        sdk = os.environ.get('NETHACK_ANDROID_SDK', str(user_sdk) if user_sdk.exists() else os.environ.get('ANDROID_HOME', ''))
         if sdk:
             (build / 'local.properties').write_text('sdk.dir=' + sdk.replace('\\', '\\\\') + '\n')
     cfg = ROOT / 'godot/export_presets.cfg'

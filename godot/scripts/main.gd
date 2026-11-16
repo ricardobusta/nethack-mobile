@@ -113,6 +113,7 @@ func _build_ui() -> void:
 	map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map.custom_minimum_size.y = 160
 	map.tiled = bool(settings.get_value("ui", "tiles", true))
+	(header.get_node("Mode") as Button).text = "Tiles" if map.tiled else "ASCII"
 	map.tile_pressed.connect(_tile_pressed)
 	body.add_child(map)
 	hint = Label.new()
@@ -614,7 +615,7 @@ func _return_to_game() -> void:
 func _toggle_mode() -> void:
 	map.tiled = not map.tiled
 	map.queue_redraw()
-	(header.get_node("Mode") as Button).text = "ASCII" if map.tiled else "Tiles"
+	(header.get_node("Mode") as Button).text = "Tiles" if map.tiled else "ASCII"
 	settings.set_value("ui", "tiles", map.tiled)
 	settings.save("user://settings.cfg")
 

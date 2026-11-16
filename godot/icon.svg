@@ -2,5 +2,8 @@
  <rect width="512" height="512" rx="104" fill="#101925"/>
  <path d="M114 116h284v280H114z" fill="none" stroke="#52677c" stroke-width="14"/>
  <path d="M114 186h70v70h-70m284 70h-70v70" fill="none" stroke="#52677c" stroke-width="14"/>
- <text x="256" y="332" font-family="monospace" font-weight="bold" font-size="246" fill="#e7c66b" text-anchor="middle">@</text>
+ <g fill="none" stroke="#e7c66b" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M323 323c-18 21-43 33-74 33-62 0-107-43-107-104 0-65 47-109 111-109 61 0 105 41 105 99v39c0 23-13 36-31 36-18 0-29-12-29-33v-84"/>
+  <ellipse cx="253" cy="253" rx="43" ry="48"/>
+ </g>
 </svg>
