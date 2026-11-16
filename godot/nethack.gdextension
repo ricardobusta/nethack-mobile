@@ -1,0 +1,14 @@
+[configuration]
+entry_symbol = "nethack_mobile_init"
+compatibility_minimum = "4.7"
+reloadable = false
+
+[libraries]
+macos.debug.arm64 = "res://bin/Darwin/arm64/libnethack_mobile.dylib"
+macos.release.arm64 = "res://bin/Darwin/arm64/libnethack_mobile.dylib"
+linux.debug.x86_64 = "res://bin/Linux/x86_64/libnethack_mobile.so"
+linux.release.x86_64 = "res://bin/Linux/x86_64/libnethack_mobile.so"
+android.debug.arm64 = "res://bin/Android/aarch64/libnethack_mobile.so"
+android.release.arm64 = "res://bin/Android/aarch64/libnethack_mobile.so"
+android.debug.x86_64 = "res://bin/Android/x86_64/libnethack_mobile.so"
+android.release.x86_64 = "res://bin/Android/x86_64/libnethack_mobile.so"
