@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,8 @@ def prepare(source):
     call('cmake', '--build', tools, '--target', 'tilemap', '-j', '8')
     call(tools / 'tilemap', cwd=work / 'util')
     data = ROOT / 'godot/data'
+    if data.exists():
+        shutil.rmtree(data)
     data.mkdir(parents=True, exist_ok=True)
     # DLB also supports loose data files. Ship them all to avoid a platform-specific archive.
     for p in (work / 'dat').iterdir():
@@ -54,6 +57,10 @@ def prepare(source):
     assert len((header + directory).encode()) == directory_size
     (data / 'nhdat').write_bytes((header + directory).encode() + content)
     (data / 'sysconf').write_text('WIZARDS=*\nEXPLORERS=*\nOPTIONS=!legacy,autopickup,travel,!news\n')
+    version_header = (work / 'include/patchlevel.h').read_text()
+    versions = [re.search(r'^#define\s+' + key + r'\s+(\d+)', version_header, re.M).group(1) for key in ('VERSION_MAJOR', 'VERSION_MINOR', 'PATCHLEVEL', 'EDITLEVEL')]
+    version = '.'.join(versions[:3])
+    (data / 'build.json').write_text(json.dumps({'engine_version': version, 'save_namespace': version + '-' + versions[3] + '-mobile1', 'port_version': '0.1.0'}, indent=2))
     for name, path in [('LICENSE', ROOT / 'LICENSE'), ('NOTICE', ROOT / 'NOTICE'),
                        ('GODOT_LICENSE', ROOT / 'vendor/godot-cpp/LICENSE.md'),
                        ('LUA_README.html', ROOT / 'vendor/lua/doc/readme.html')]:

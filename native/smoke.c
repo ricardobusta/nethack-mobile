@@ -7,7 +7,7 @@
 
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
-    int first[256], commands = 0, maps = 0, restored = 0, ended = 0;
+    int first[256], commands = 0, maps = 0, restored = 0, ended = 0, tile_types = 0, tiles[4096] = {0};
     for (int i = 0; i < 256; ++i) first[i] = -1;
     if (!nm_start(argv[1], "MobileTest")) return 3;
     time_t deadline = time(NULL) + 60;
@@ -15,7 +15,11 @@ int main(int argc, char **argv) {
         nm_event e;
         if (!nm_poll(&e)) { usleep(1000); continue; }
         if (e.type == NM_MESSAGE) fprintf(stderr, "engine: %s\n", e.text);
-        if (e.type == NM_GLYPH) ++maps;
+        if (e.type == NM_GLYPH) {
+            ++maps;
+            if (e.values[4] < 0 || e.values[4] >= 1515) { fprintf(stderr, "Invalid tile mapping\n"); nm_stop(); return 9; }
+            if (!tiles[e.values[4]]) { tiles[e.values[4]] = 1; ++tile_types; }
+        }
         if (e.type == NM_MENU_START) first[e.values[0]] = -1;
         if (e.type == NM_MENU_ITEM && e.values[3] && first[e.values[0]] < 0) first[e.values[0]] = e.values[1];
         if (e.type == NM_PROMPT) {
@@ -44,6 +48,7 @@ int main(int argc, char **argv) {
                 input.type = NM_EXTENDED;
                 snprintf(input.text, sizeof input.text, "%s", commands >= 6 ? "quit" : "version");
                 break;
+            case 6: input.key = 27; break;
             }
             nm_input stale = input; stale.request += 100000;
             if (nm_respond(&stale)) { fprintf(stderr, "Accepted stale input\n"); nm_stop(); return 4; }
@@ -56,7 +61,7 @@ int main(int argc, char **argv) {
                 if (!nm_start(argv[1], "MobileTest")) return 6;
             } else {
                 nm_stop();
-                int success = maps > 100 && commands >= 6;
+                int success = maps > 100 && commands >= 6 && tile_types >= 5;
                 printf("Native smoke: %d map events, %d command boundaries, %d sessions; %s.\n", maps, commands, ended, success ? "passed" : "FAILED");
                 return success ? 0 : 7;
             }

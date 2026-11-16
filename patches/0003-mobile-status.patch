@@ -1,0 +1,17 @@
+--- a/win/shim/winshim.c
++++ b/win/shim/winshim.c
+@@ -248,7 +248,13 @@
+     shim_preference_update,
+     shim_getmsghistory, shim_putmsghistory,
+     shim_status_init,
+-    genl_status_finish, genl_status_enablefield,
++    genl_status_finish,
++#ifdef NH_MOBILE
++    /* NetHack Mobile: changed 2026-11-16; publish named status fields. */
++    shim_status_enablefield,
++#else
++    genl_status_enablefield,
++#endif
+ #ifdef STATUS_HILITES
+     shim_status_update,
+ #else

@@ -64,6 +64,20 @@ function(godot_arch_name OUTVAR)
         endif()
     endif()
 
+    # Special case for MSVC cross-compilation
+    if(DEFINED CMAKE_VS_PLATFORM_NAME)
+        if(CMAKE_VS_PLATFORM_NAME STREQUAL "Win32")
+            set(${OUTVAR} "x86_32" PARENT_SCOPE)
+            return()
+        elseif(CMAKE_VS_PLATFORM_NAME STREQUAL "x64")
+            set(${OUTVAR} "x86_64" PARENT_SCOPE)
+            return()
+        elseif(CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64")
+            set(${OUTVAR} "arm64" PARENT_SCOPE)
+            return()
+        endif()
+    endif()
+
     # Direct match early out.
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCH)
     if(ARCH IN_LIST ARCH_LIST)
@@ -114,6 +128,12 @@ function(godotcpp_options)
     set_property(CACHE GODOTCPP_TARGET PROPERTY STRINGS "template_debug;template_release;editor")
 
     # Input from user for GDExtension interface header and the API JSON file
+    set(GODOTCPP_API_VERSION
+        ""
+        CACHE STRING
+        "The Godot API version to target (ex \"4.5\") using one of the included API JSON files"
+    )
+    set_property(CACHE GODOTCPP_API_VERSION PROPERTY STRINGS ";4.3;4.4;4.5;4.6;4.7")
     set(GODOTCPP_GDEXTENSION_DIR
         "gdextension"
         CACHE PATH
@@ -122,7 +142,13 @@ function(godotcpp_options)
     set(GODOTCPP_CUSTOM_API_FILE
         ""
         CACHE FILEPATH
-        "Path to a custom GDExtension API JSON file (takes precedence over `GODOTCPP_GDEXTENSION_DIR`) ( /path/to/custom_api_file )"
+        "Path to a custom GDExtension API JSON file (takes precedence over `GODOTCPP_GDEXTENSION_DIR` and `GODOTCPP_API_VERSION`) ( /path/to/custom_api_file )"
+    )
+
+    set(GODOTCPP_BINDING_HOOK_FILE
+        ""
+        CACHE FILEPATH
+        "Path to a Python file defining custom binding generator hooks. The file has to contain a class named `CustomBindingGeneratorHooks`"
     )
 
     #TODO generate_bindings
@@ -155,6 +181,7 @@ function(godotcpp_options)
 
     #TODO optimize
 
+    option(GODOTCPP_DEPRECATED "Enable compatibility code for deprecated and removed features" ON)
     option(GODOTCPP_DEV_BUILD "Developer build with dev-only debugging code (DEV_ENABLED)" OFF)
 
     #[[ debug_symbols
@@ -243,10 +270,23 @@ function(godotcpp_generate)
     math(EXPR BITS "${CMAKE_SIZEOF_VOID_P} * 8") # CMAKE_SIZEOF_VOID_P refers to target architecture.
 
     # API json File
-    set(GODOTCPP_GDEXTENSION_API_FILE "${GODOTCPP_GDEXTENSION_DIR}/extension_api.json")
     if(GODOTCPP_CUSTOM_API_FILE) # User-defined override.
         set(GODOTCPP_GDEXTENSION_API_FILE "${GODOTCPP_CUSTOM_API_FILE}")
+    else()
+        if(GODOTCPP_API_VERSION STREQUAL "")
+            set(GODOTCPP_API_VERSION "${GODOTCPP_DEFAULT_API_VERSION}")
+        endif()
+        if(GODOTCPP_API_VERSION STREQUAL "")
+            message(FATAL_ERROR "'GODOTCPP_API_VERSION' must be provided")
+        endif()
+        string(REPLACE "." "-" GODOTCPP_API_VERSION_DASHED "${GODOTCPP_API_VERSION}")
+        set(GODOTCPP_GDEXTENSION_API_FILE
+            "${GODOTCPP_GDEXTENSION_DIR}/extension_api-${GODOTCPP_API_VERSION_DASHED}.json"
+        )
     endif()
+
+    # Interface json file.
+    set(GODOTCPP_GDEXTENSION_INTERFACE_FILE "${GODOTCPP_GDEXTENSION_DIR}/gdextension_interface.json")
 
     # Build Profile
     if(GODOTCPP_BUILD_PROFILE)
@@ -262,6 +302,7 @@ function(godotcpp_generate)
     endif()
 
     message(STATUS "GODOTCPP_GDEXTENSION_API_FILE = '${GODOTCPP_GDEXTENSION_API_FILE}'")
+    message(STATUS "GODOTCPP_GDEXTENSION_INTERFACE_FILE = '${GODOTCPP_GDEXTENSION_INTERFACE_FILE}'")
 
     # generate the file list to use
     binding_generator_get_file_list( GENERATED_FILES_LIST
@@ -271,10 +312,12 @@ function(godotcpp_generate)
 
     binding_generator_generate_bindings(
             "${GODOTCPP_GDEXTENSION_API_FILE}"
+            "${GODOTCPP_GDEXTENSION_INTERFACE_FILE}"
             "${USE_TEMPLATE_GET_NODE}"
             "${BITS}"
             "${GODOTCPP_PRECISION}"
             "${CMAKE_CURRENT_BINARY_DIR}"
+            "${GODOTCPP_BINDING_HOOK_FILE}"
     )
 
     ### Platform is derived from the toolchain target
@@ -295,7 +338,7 @@ function(godotcpp_generate)
     godot_arch_name( ARCH_NAME )
 
     # Transform options into generator expressions
-    set(HOT_RELOAD-UNSET "$<STREQUAL:${GODOTCPP_USE_HOT_RELOAD},>")
+    set(HOT_RELOAD "$<BOOL:${GODOTCPP_USE_HOT_RELOAD}>")
 
     set(DISABLE_EXCEPTIONS "$<BOOL:${GODOTCPP_DISABLE_EXCEPTIONS}>")
 
@@ -317,7 +360,6 @@ function(godotcpp_generate)
     ### Define our godot-cpp library targets
     # Generator Expressions that rely on the target
     set(DEBUG_FEATURES "$<NOT:$<STREQUAL:${GODOTCPP_TARGET},template_release>>")
-    set(HOT_RELOAD "$<IF:${HOT_RELOAD-UNSET},${DEBUG_FEATURES},$<BOOL:${GODOTCPP_USE_HOT_RELOAD}>>")
 
     # Suffix Generator Expression
     string(
@@ -345,13 +387,16 @@ function(godotcpp_generate)
     add_library(godot::cpp ALIAS godot-cpp)
 
     file(GLOB_RECURSE GODOTCPP_SOURCES LIST_DIRECTORIES NO CONFIGURE_DEPENDS src/*.cpp)
+    set(GODOTCPP_NATVIS_FILES natvis/godot-cpp.natvis)
 
-    target_sources(godot-cpp PRIVATE ${GODOTCPP_SOURCES} ${GENERATED_FILES_LIST})
+    target_sources(godot-cpp PRIVATE ${GODOTCPP_SOURCES} ${GENERATED_FILES_LIST} ${GODOTCPP_NATVIS_FILES})
 
     target_include_directories(
         godot-cpp
         ${GODOTCPP_SYSTEM_HEADERS_ATTRIBUTE}
-        PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/gen/include ${GODOTCPP_GDEXTENSION_DIR}
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/gen/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     )
 
     # gersemi: off

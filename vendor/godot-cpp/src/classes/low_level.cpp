@@ -35,33 +35,50 @@
 
 #include <godot_cpp/godot.hpp>
 
+// Unlike the classes above, `Engine` and `SceneTree` aren't always generated, since they may be left out of a build profile.
+// Only define `SceneTree::get_singleton()` when both of them are available, so that build profiles don't have to include them.
+#if __has_include(<godot_cpp/classes/engine.hpp>) && __has_include(<godot_cpp/classes/scene_tree.hpp>)
+#define GODOT_CPP_SCENE_TREE_SINGLETON
+
+#include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/scene_tree.hpp>
+
+#include <godot_cpp/core/object.hpp>
+#endif
+
 namespace godot {
 Error XMLParser::_open_buffer(const uint8_t *p_buffer, size_t p_size) {
-	return (Error)internal::gdextension_interface_xml_parser_open_buffer(_owner, p_buffer, p_size);
+	return (Error)::godot::gdextension_interface::xml_parser_open_buffer(_owner, p_buffer, p_size);
 }
 
 uint64_t FileAccess::get_buffer(uint8_t *p_dst, uint64_t p_length) const {
-	return internal::gdextension_interface_file_access_get_buffer(_owner, p_dst, p_length);
+	return ::godot::gdextension_interface::file_access_get_buffer(_owner, p_dst, p_length);
 }
 
 void FileAccess::store_buffer(const uint8_t *p_src, uint64_t p_length) {
-	internal::gdextension_interface_file_access_store_buffer(_owner, p_src, p_length);
+	::godot::gdextension_interface::file_access_store_buffer(_owner, p_src, p_length);
 }
 
 WorkerThreadPool::TaskID WorkerThreadPool::add_native_task(void (*p_func)(void *), void *p_userdata, bool p_high_priority, const String &p_description) {
-	return (TaskID)internal::gdextension_interface_worker_thread_pool_add_native_task(_owner, p_func, p_userdata, p_high_priority, (GDExtensionConstStringPtr)&p_description);
+	return (TaskID)::godot::gdextension_interface::worker_thread_pool_add_native_task(_owner, p_func, p_userdata, p_high_priority, (GDExtensionConstStringPtr)&p_description);
 }
 
 WorkerThreadPool::GroupID WorkerThreadPool::add_native_group_task(void (*p_func)(void *, uint32_t), void *p_userdata, int p_elements, int p_tasks, bool p_high_priority, const String &p_description) {
-	return (GroupID)internal::gdextension_interface_worker_thread_pool_add_native_group_task(_owner, p_func, p_userdata, p_elements, p_tasks, p_high_priority, (GDExtensionConstStringPtr)&p_description);
+	return (GroupID)::godot::gdextension_interface::worker_thread_pool_add_native_group_task(_owner, p_func, p_userdata, p_elements, p_tasks, p_high_priority, (GDExtensionConstStringPtr)&p_description);
 }
 
 uint8_t *Image::ptrw() {
-	return internal::gdextension_interface_image_ptrw(_owner);
+	return ::godot::gdextension_interface::image_ptrw(_owner);
 }
 
 const uint8_t *Image::ptr() {
-	return internal::gdextension_interface_image_ptr(_owner);
+	return ::godot::gdextension_interface::image_ptr(_owner);
 }
+
+#ifdef GODOT_CPP_SCENE_TREE_SINGLETON
+SceneTree *SceneTree::get_singleton() {
+	return Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
+}
+#endif
 
 } // namespace godot

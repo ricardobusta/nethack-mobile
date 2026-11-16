@@ -1,0 +1,9 @@
+{
+  "godot": "4.7.1.stable.official.a13da4feb",
+  "godot_cpp": "10.0.0-stable",
+  "godot_api": "4.7",
+  "android_min_sdk": 26,
+  "android_target_sdk": 36,
+  "android_ndk": "27.2.12479018",
+  "java": 17
+}

@@ -65,111 +65,23 @@ _FORCE_INLINE_ bool is_str_less(const L *l_ptr, const R *r_ptr) {
 	}
 }
 
-template <typename T>
-bool CharStringT<T>::operator<(const CharStringT<T> &p_right) const {
-	if (length() == 0) {
-		return p_right.length() != 0;
-	}
-
-	return is_str_less(get_data(), p_right.get_data());
-}
-
-template <typename T>
-CharStringT<T> &CharStringT<T>::operator+=(T p_char) {
-	const int64_t lhs_len = length();
-	resize(lhs_len + 2);
-
-	T *dst = ptrw();
-	dst[lhs_len] = p_char;
-	dst[lhs_len + 1] = 0;
-
-	return *this;
-}
-
-template <typename T>
-void CharStringT<T>::operator=(const T *p_cstr) {
-	copy_from(p_cstr);
-}
-
-template <>
-const char *CharStringT<char>::get_data() const {
-	if (size()) {
-		return &operator[](0);
-	} else {
-		return "";
-	}
-}
-
-template <>
-const char16_t *CharStringT<char16_t>::get_data() const {
-	if (size()) {
-		return &operator[](0);
-	} else {
-		return u"";
-	}
-}
-
-template <>
-const char32_t *CharStringT<char32_t>::get_data() const {
-	if (size()) {
-		return &operator[](0);
-	} else {
-		return U"";
-	}
-}
-
-template <>
-const wchar_t *CharStringT<wchar_t>::get_data() const {
-	if (size()) {
-		return &operator[](0);
-	} else {
-		return L"";
-	}
-}
-
-template <typename T>
-void CharStringT<T>::copy_from(const T *p_cstr) {
-	if (!p_cstr) {
-		resize(0);
-		return;
-	}
-
-	size_t len = std::char_traits<T>::length(p_cstr);
-
-	if (len == 0) {
-		resize(0);
-		return;
-	}
-
-	Error err = resize(++len); // include terminating null char
-
-	ERR_FAIL_COND_MSG(err != OK, "Failed to copy C-string.");
-
-	memcpy(ptrw(), p_cstr, len);
-}
-
-template class CharStringT<char>;
-template class CharStringT<char16_t>;
-template class CharStringT<char32_t>;
-template class CharStringT<wchar_t>;
-
 // Custom String functions that are not part of bound API.
 // It's easier to have them written in C++ directly than in a Python script that generates them.
 
 String::String(const char *from) {
-	internal::gdextension_interface_string_new_with_latin1_chars(_native_ptr(), from);
+	::godot::gdextension_interface::string_new_with_latin1_chars(_native_ptr(), from);
 }
 
 String::String(const wchar_t *from) {
-	internal::gdextension_interface_string_new_with_wide_chars(_native_ptr(), from);
+	::godot::gdextension_interface::string_new_with_wide_chars(_native_ptr(), from);
 }
 
 String::String(const char16_t *from) {
-	internal::gdextension_interface_string_new_with_utf16_chars(_native_ptr(), from);
+	::godot::gdextension_interface::string_new_with_utf16_chars(_native_ptr(), from);
 }
 
 String::String(const char32_t *from) {
-	internal::gdextension_interface_string_new_with_utf32_chars(_native_ptr(), from);
+	::godot::gdextension_interface::string_new_with_utf32_chars(_native_ptr(), from);
 }
 
 String String::utf8(const char *from, int64_t len) {
@@ -179,7 +91,7 @@ String String::utf8(const char *from, int64_t len) {
 }
 
 Error String::parse_utf8(const char *from, int64_t len) {
-	return (Error)internal::gdextension_interface_string_new_with_utf8_chars_and_len2(_native_ptr(), from, len);
+	return (Error)::godot::gdextension_interface::string_new_with_utf8_chars_and_len2(_native_ptr(), from, len);
 }
 
 String String::utf16(const char16_t *from, int64_t len) {
@@ -189,7 +101,7 @@ String String::utf16(const char16_t *from, int64_t len) {
 }
 
 Error String::parse_utf16(const char16_t *from, int64_t len, bool default_little_endian) {
-	return (Error)internal::gdextension_interface_string_new_with_utf16_chars_and_len2(_native_ptr(), from, len, default_little_endian);
+	return (Error)::godot::gdextension_interface::string_new_with_utf16_chars_and_len2(_native_ptr(), from, len, default_little_endian);
 }
 
 String String::num_real(double p_num, bool p_trailing) {
@@ -230,11 +142,11 @@ String rtoss(double p_val) {
 }
 
 CharString String::utf8() const {
-	int64_t length = internal::gdextension_interface_string_to_utf8_chars(_native_ptr(), nullptr, 0);
+	int64_t length = ::godot::gdextension_interface::string_to_utf8_chars(_native_ptr(), nullptr, 0);
 	int64_t size = length + 1;
 	CharString str;
-	str.resize(size);
-	internal::gdextension_interface_string_to_utf8_chars(_native_ptr(), str.ptrw(), length);
+	str.resize_uninitialized(size);
+	::godot::gdextension_interface::string_to_utf8_chars(_native_ptr(), str.ptrw(), length);
 
 	str[length] = '\0';
 
@@ -242,11 +154,11 @@ CharString String::utf8() const {
 }
 
 CharString String::ascii() const {
-	int64_t length = internal::gdextension_interface_string_to_latin1_chars(_native_ptr(), nullptr, 0);
+	int64_t length = ::godot::gdextension_interface::string_to_latin1_chars(_native_ptr(), nullptr, 0);
 	int64_t size = length + 1;
 	CharString str;
-	str.resize(size);
-	internal::gdextension_interface_string_to_latin1_chars(_native_ptr(), str.ptrw(), length);
+	str.resize_uninitialized(size);
+	::godot::gdextension_interface::string_to_latin1_chars(_native_ptr(), str.ptrw(), length);
 
 	str[length] = '\0';
 
@@ -254,11 +166,11 @@ CharString String::ascii() const {
 }
 
 Char16String String::utf16() const {
-	int64_t length = internal::gdextension_interface_string_to_utf16_chars(_native_ptr(), nullptr, 0);
+	int64_t length = ::godot::gdextension_interface::string_to_utf16_chars(_native_ptr(), nullptr, 0);
 	int64_t size = length + 1;
 	Char16String str;
-	str.resize(size);
-	internal::gdextension_interface_string_to_utf16_chars(_native_ptr(), str.ptrw(), length);
+	str.resize_uninitialized(size);
+	::godot::gdextension_interface::string_to_utf16_chars(_native_ptr(), str.ptrw(), length);
 
 	str[length] = '\0';
 
@@ -266,11 +178,11 @@ Char16String String::utf16() const {
 }
 
 Char32String String::utf32() const {
-	int64_t length = internal::gdextension_interface_string_to_utf32_chars(_native_ptr(), nullptr, 0);
+	int64_t length = ::godot::gdextension_interface::string_to_utf32_chars(_native_ptr(), nullptr, 0);
 	int64_t size = length + 1;
 	Char32String str;
-	str.resize(size);
-	internal::gdextension_interface_string_to_utf32_chars(_native_ptr(), str.ptrw(), length);
+	str.resize_uninitialized(size);
+	::godot::gdextension_interface::string_to_utf32_chars(_native_ptr(), str.ptrw(), length);
 
 	str[length] = '\0';
 
@@ -278,11 +190,11 @@ Char32String String::utf32() const {
 }
 
 CharWideString String::wide_string() const {
-	int64_t length = internal::gdextension_interface_string_to_wide_chars(_native_ptr(), nullptr, 0);
+	int64_t length = ::godot::gdextension_interface::string_to_wide_chars(_native_ptr(), nullptr, 0);
 	int64_t size = length + 1;
 	CharWideString str;
-	str.resize(size);
-	internal::gdextension_interface_string_to_wide_chars(_native_ptr(), str.ptrw(), length);
+	str.resize_uninitialized(size);
+	::godot::gdextension_interface::string_to_wide_chars(_native_ptr(), str.ptrw(), length);
 
 	str[length] = '\0';
 
@@ -290,7 +202,7 @@ CharWideString String::wide_string() const {
 }
 
 Error String::resize(int64_t p_size) {
-	return (Error)internal::gdextension_interface_string_resize(_native_ptr(), p_size);
+	return (Error)::godot::gdextension_interface::string_resize(_native_ptr(), p_size);
 }
 
 String &String::operator=(const char *p_str) {
@@ -366,44 +278,44 @@ String String::operator+(const char32_t p_char) {
 }
 
 String &String::operator+=(const String &p_str) {
-	internal::gdextension_interface_string_operator_plus_eq_string((GDExtensionStringPtr)this, (GDExtensionConstStringPtr)&p_str);
+	::godot::gdextension_interface::string_operator_plus_eq_string((GDExtensionStringPtr)this, (GDExtensionConstStringPtr)&p_str);
 	return *this;
 }
 
 String &String::operator+=(char32_t p_char) {
-	internal::gdextension_interface_string_operator_plus_eq_char((GDExtensionStringPtr)this, p_char);
+	::godot::gdextension_interface::string_operator_plus_eq_char((GDExtensionStringPtr)this, p_char);
 	return *this;
 }
 
 String &String::operator+=(const char *p_str) {
-	internal::gdextension_interface_string_operator_plus_eq_cstr((GDExtensionStringPtr)this, p_str);
+	::godot::gdextension_interface::string_operator_plus_eq_cstr((GDExtensionStringPtr)this, p_str);
 	return *this;
 }
 
 String &String::operator+=(const wchar_t *p_str) {
-	internal::gdextension_interface_string_operator_plus_eq_wcstr((GDExtensionStringPtr)this, p_str);
+	::godot::gdextension_interface::string_operator_plus_eq_wcstr((GDExtensionStringPtr)this, p_str);
 	return *this;
 }
 
 String &String::operator+=(const char32_t *p_str) {
-	internal::gdextension_interface_string_operator_plus_eq_c32str((GDExtensionStringPtr)this, p_str);
+	::godot::gdextension_interface::string_operator_plus_eq_c32str((GDExtensionStringPtr)this, p_str);
 	return *this;
 }
 
 const char32_t &String::operator[](int64_t p_index) const {
-	return *internal::gdextension_interface_string_operator_index_const((GDExtensionStringPtr)this, p_index);
+	return *::godot::gdextension_interface::string_operator_index_const((GDExtensionStringPtr)this, p_index);
 }
 
 char32_t &String::operator[](int64_t p_index) {
-	return *internal::gdextension_interface_string_operator_index((GDExtensionStringPtr)this, p_index);
+	return *::godot::gdextension_interface::string_operator_index((GDExtensionStringPtr)this, p_index);
 }
 
 const char32_t *String::ptr() const {
-	return internal::gdextension_interface_string_operator_index_const((GDExtensionStringPtr)this, 0);
+	return ::godot::gdextension_interface::string_operator_index_const((GDExtensionStringPtr)this, 0);
 }
 
 char32_t *String::ptrw() {
-	return internal::gdextension_interface_string_operator_index((GDExtensionStringPtr)this, 0);
+	return ::godot::gdextension_interface::string_operator_index((GDExtensionStringPtr)this, 0);
 }
 
 bool operator==(const char *p_chr, const String &p_str) {
@@ -459,7 +371,7 @@ String operator+(char32_t p_char, const String &p_str) {
 }
 
 StringName::StringName(const char *from, bool p_static) {
-	internal::gdextension_interface_string_name_new_with_latin1_chars(&opaque, from, p_static);
+	::godot::gdextension_interface::string_name_new_with_latin1_chars(&opaque, from, p_static);
 }
 
 StringName::StringName(const wchar_t *from) :

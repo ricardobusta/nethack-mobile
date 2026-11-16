@@ -26,6 +26,7 @@ int nm_start(const char *directory, const char *name);
 int nm_poll(nm_event *event);
 int nm_respond(const nm_input *input);
 void nm_suspend(void);
+void nm_interrupt(void);
 void nm_stop(void);
 int nm_running(void);
 #ifdef __cplusplus

@@ -35,21 +35,26 @@
 namespace godot {
 
 void *Memory::alloc_static(size_t p_bytes, bool p_pad_align) {
-#ifdef DEBUG_ENABLED
-	bool prepad = false; // Already pre paded in the engine.
+#if GODOT_VERSION_MINOR >= 6
+	return ::godot::gdextension_interface::mem_alloc2(p_bytes, p_pad_align);
 #else
-	bool prepad = p_pad_align;
-#endif
-
-	void *mem = internal::gdextension_interface_mem_alloc(p_bytes + (prepad ? DATA_OFFSET : 0));
+	void *mem = ::godot::gdextension_interface::mem_alloc(p_bytes + (p_pad_align ? DATA_OFFSET : 0));
 	ERR_FAIL_NULL_V(mem, nullptr);
 
-	if (prepad) {
+	if (p_pad_align) {
 		uint8_t *s8 = (uint8_t *)mem;
 		return s8 + DATA_OFFSET;
 	} else {
 		return mem;
 	}
+#endif
+}
+
+void *Memory::alloc_static_zeroed(size_t p_bytes, bool p_pad_align) {
+	// TODO Could benefit from binding the upstream alloc_static_zeroed
+	void *mem = alloc_static(p_bytes, p_pad_align);
+	memset(mem, 0, p_bytes);
+	return mem;
 }
 
 void *Memory::realloc_static(void *p_memory, size_t p_bytes, bool p_pad_align) {
@@ -60,37 +65,31 @@ void *Memory::realloc_static(void *p_memory, size_t p_bytes, bool p_pad_align) {
 		return nullptr;
 	}
 
-	uint8_t *mem = (uint8_t *)p_memory;
-
-#ifdef DEBUG_ENABLED
-	bool prepad = false; // Already pre paded in the engine.
+#if GODOT_VERSION_MINOR >= 6
+	return ::godot::gdextension_interface::mem_realloc2(p_memory, p_bytes, p_pad_align);
 #else
-	bool prepad = p_pad_align;
-#endif
-
-	if (prepad) {
+	uint8_t *mem = (uint8_t *)p_memory;
+	if (p_pad_align) {
 		mem -= DATA_OFFSET;
-		mem = (uint8_t *)internal::gdextension_interface_mem_realloc(mem, p_bytes + DATA_OFFSET);
+		mem = (uint8_t *)::godot::gdextension_interface::mem_realloc(mem, p_bytes + DATA_OFFSET);
 		ERR_FAIL_NULL_V(mem, nullptr);
 		return mem + DATA_OFFSET;
 	} else {
-		return (uint8_t *)internal::gdextension_interface_mem_realloc(mem, p_bytes);
+		return (uint8_t *)::godot::gdextension_interface::mem_realloc(mem, p_bytes);
 	}
+#endif
 }
 
 void Memory::free_static(void *p_ptr, bool p_pad_align) {
-	uint8_t *mem = (uint8_t *)p_ptr;
-
-#ifdef DEBUG_ENABLED
-	bool prepad = false; // Already pre paded in the engine.
+#if GODOT_VERSION_MINOR >= 6
+	::godot::gdextension_interface::mem_free2(p_ptr, p_pad_align);
 #else
-	bool prepad = p_pad_align;
-#endif
-
-	if (prepad) {
+	uint8_t *mem = (uint8_t *)p_ptr;
+	if (p_pad_align) {
 		mem -= DATA_OFFSET;
 	}
-	internal::gdextension_interface_mem_free(mem);
+	::godot::gdextension_interface::mem_free(mem);
+#endif
 }
 
 _GlobalNil::_GlobalNil() {
@@ -103,31 +102,10 @@ _GlobalNil _GlobalNilClass::_nil;
 
 } // namespace godot
 
-// p_dummy argument is added to avoid conflicts with the engine functions when both engine and GDExtension are built as a static library on iOS.
-void *operator new(size_t p_size, const char *p_dummy, const char *p_description) {
-	return godot::Memory::alloc_static(p_size);
+void *operator new(size_t p_size, ::godot::DefaultAllocator p_allocator) {
+	return ::godot::Memory::alloc_static(p_size);
 }
 
-void *operator new(size_t p_size, const char *p_dummy, void *(*p_allocfunc)(size_t p_size)) {
+void *operator new(size_t p_size, ::godot::DefaultAllocator p_allocator, void *(*p_allocfunc)(size_t p_size)) {
 	return p_allocfunc(p_size);
 }
-
-using namespace godot;
-
-#ifdef _MSC_VER
-void operator delete(void *p_mem, const char *p_dummy, const char *p_description) {
-	ERR_PRINT("Call to placement delete should not happen.");
-	CRASH_NOW();
-}
-
-void operator delete(void *p_mem, const char *p_dummy, void *(*p_allocfunc)(size_t p_size)) {
-	ERR_PRINT("Call to placement delete should not happen.");
-	CRASH_NOW();
-}
-
-void operator delete(void *p_mem, const char *p_dummy, void *p_pointer, size_t check, const char *p_description) {
-	ERR_PRINT("Call to placement delete should not happen.");
-	CRASH_NOW();
-}
-
-#endif

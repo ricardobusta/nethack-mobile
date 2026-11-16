@@ -1,15 +1,19 @@
 #!/usr/bin/env python
 
+import importlib.util
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
+
+from make_interface_header import generate_gdextension_interface_header
 
 
 def generate_mod_version(argcount, const=False, returns=False):
     s = """
 #define MODBIND$VER($RETTYPE m_name$ARG) \\
-virtual $RETVAL _##m_name($FUNCARGS) $CONST override; \\
+virtual $RETVAL _##m_name($FUNCARGS) $CONST override;
 """
     sproto = str(argcount)
     if returns:
@@ -68,11 +72,11 @@ def generate_virtual_version(argcount, const=False, returns=False, required=Fals
     s = """#define GDVIRTUAL$VER($RET m_name $ARG)\\
 	::godot::StringName _gdvirtual_##m_name##_sn = #m_name;\\
 	_FORCE_INLINE_ bool _gdvirtual_##m_name##_call($CALLARGS) $CONST {\\
-		if (::godot::internal::gdextension_interface_object_has_script_method(_owner, &_gdvirtual_##m_name##_sn)) { \\
+		if (::godot::gdextension_interface::object_has_script_method(_owner, &_gdvirtual_##m_name##_sn)) { \\
 			GDExtensionCallError ce;\\
 			$CALLSIARGS\\
 			::godot::Variant ret;\\
-			::godot::internal::gdextension_interface_object_call_script_method(_owner, &_gdvirtual_##m_name##_sn, $CALLSIARGPASS, &ret, &ce);\\
+			::godot::gdextension_interface::object_call_script_method(_owner, &_gdvirtual_##m_name##_sn, $CALLSIARGPASS, &ret, &ce);\\
 			if (ce.error == GDEXTENSION_CALL_OK) {\\
 				$CALLSIRET\\
 				return true;\\
@@ -83,7 +87,7 @@ def generate_virtual_version(argcount, const=False, returns=False, required=Fals
 		return false;\\
 	}\\
 	_FORCE_INLINE_ bool _gdvirtual_##m_name##_overridden() const {\\
-		return ::godot::internal::gdextension_interface_object_has_script_method(_owner, &_gdvirtual_##m_name##_sn); \\
+		return ::godot::gdextension_interface::object_has_script_method(_owner, &_gdvirtual_##m_name##_sn); \\
 	}\\
 	_FORCE_INLINE_ static ::godot::MethodInfo _gdvirtual_##m_name##_get_method_info() {\\
 		::godot::MethodInfo method_info;\\
@@ -97,7 +101,7 @@ def generate_virtual_version(argcount, const=False, returns=False, required=Fals
 
     sproto = str(argcount)
     method_info = ""
-    method_flags = "METHOD_FLAG_VIRTUAL"
+    method_flags = "::godot::MethodFlags::METHOD_FLAG_VIRTUAL"
     if returns:
         sproto += "R"
         s = s.replace("$RET", "m_ret,")
@@ -110,14 +114,14 @@ def generate_virtual_version(argcount, const=False, returns=False, required=Fals
 
     if const:
         sproto += "C"
-        method_flags += " | METHOD_FLAG_CONST"
+        method_flags += " | ::godot::MethodFlags::METHOD_FLAG_CONST"
         s = s.replace("$CONST", "const")
     else:
         s = s.replace("$CONST ", "")
 
     if required:
         sproto += "_REQUIRED"
-        method_flags += " | METHOD_FLAG_VIRTUAL_REQUIRED"
+        method_flags += " | ::godot::MethodFlags::METHOD_FLAG_VIRTUAL_REQUIRED"
         s = s.replace(
             "$REQCHECK",
             'ERR_PRINT_ONCE("Required virtual method " + get_class() + "::" + #m_name + " must be overridden before calling.");',
@@ -211,10 +215,14 @@ def get_file_list(api_filepath, output_dir, headers=False, sources=False):
 def _get_file_list(api, output_dir, headers=False, sources=False):
     files = []
 
+    gdextension_gen_folder = Path(output_dir) / "gen" / "include"
     core_gen_folder = Path(output_dir) / "gen" / "include" / "godot_cpp" / "core"
     include_gen_folder = Path(output_dir) / "gen" / "include" / "godot_cpp"
     source_gen_folder = Path(output_dir) / "gen" / "src"
 
+    files.append(str((gdextension_gen_folder / "gdextension_interface.h").as_posix()))
+    files.append(str((core_gen_folder / "gdextension_interface_loader.hpp").as_posix()))
+    files.append(str((source_gen_folder / "gdextension_interface_loader.cpp").as_posix()))
     files.append(str((core_gen_folder / "ext_wrappers.gen.inc").as_posix()))
     files.append(str((core_gen_folder / "gdvirtual.gen.inc").as_posix()))
 
@@ -277,14 +285,47 @@ def print_file_list(api_filepath, output_dir, headers=False, sources=False):
     print(*get_file_list(api_filepath, output_dir, headers, sources), sep=";", end=None)
 
 
-def generate_bindings(api_filepath, use_template_get_node, bits="64", precision="single", output_dir="."):
+def generate_bindings(
+    api_filepath,
+    interface_filepath,
+    use_template_get_node,
+    bits="64",
+    precision="single",
+    output_dir=".",
+    hooks_path=None,
+):
     api = {}
     with open(api_filepath, encoding="utf-8") as api_file:
         api = json.load(api_file)
-    _generate_bindings(api, api_filepath, use_template_get_node, bits, precision, output_dir)
+    custom_hooks = None
+    if hooks_path:
+        # load the file dynamically
+        try:
+            spec = importlib.util.spec_from_file_location("custom_binding_generator_hooks", hooks_path)
+            loaded_module = importlib.util.module_from_spec(spec)
+            sys.modules["custom_binding_generator_hooks"] = loaded_module
+            spec.loader.exec_module(loaded_module)
+            # assume the class is named 'CustomBindingGeneratorHooks'
+            custom_hooks = loaded_module.CustomBindingGeneratorHooks()
+        except Exception:
+            raise Exception(
+                "Failed to load custom binding generator hooks. Make sure your path points to a python file which defines a class named 'BindingGeneratorHooks'"
+            )
+    _generate_bindings(
+        api, api_filepath, interface_filepath, use_template_get_node, bits, precision, output_dir, custom_hooks
+    )
 
 
-def _generate_bindings(api, api_filepath, use_template_get_node, bits="64", precision="single", output_dir="."):
+def _generate_bindings(
+    api,
+    api_filepath,
+    interface_filepath,
+    use_template_get_node,
+    bits="64",
+    precision="single",
+    output_dir=".",
+    hooks=None,
+):
     if "precision" in api["header"] and precision != api["header"]["precision"]:
         raise Exception(
             f"Cannot do a precision={precision} build using '{api_filepath}' which was generated by Godot built with precision={api['header']['precision']}"
@@ -298,12 +339,183 @@ def _generate_bindings(api, api_filepath, use_template_get_node, bits="64", prec
     real_t = "double" if precision == "double" else "float"
     print("Built-in type config: " + real_t + "_" + bits)
 
-    generate_global_constants(api, target_dir)
+    header_lines = []
+    add_header("gdextension_interface.h", header_lines)
+    gdextension_gen_folder = Path(output_dir) / "gen" / "include"
+    gdextension_gen_folder.mkdir(parents=True, exist_ok=True)
+    generate_gdextension_interface_header(
+        str((gdextension_gen_folder / "gdextension_interface.h").as_posix()), interface_filepath, header_lines
+    )
+
+    generate_gdextension_interface_loader(interface_filepath, target_dir)
+
+    generate_global_constants(api, target_dir, hooks)
     generate_version_header(api, target_dir)
     generate_global_constant_binds(api, target_dir)
-    generate_builtin_bindings(api, target_dir, real_t + "_" + bits)
-    generate_engine_classes_bindings(api, target_dir, use_template_get_node)
-    generate_utility_functions(api, target_dir)
+    generate_builtin_bindings(api, target_dir, real_t + "_" + bits, hooks)
+    generate_engine_classes_bindings(api, target_dir, use_template_get_node, hooks)
+    generate_utility_functions(api, target_dir, hooks)
+
+
+def generate_gdextension_interface_loader(interface_filepath, output_dir):
+    include_gen_folder = Path(output_dir) / "include" / "godot_cpp" / "core"
+    source_gen_folder = Path(output_dir) / "src"
+
+    include_gen_folder.mkdir(parents=True, exist_ok=True)
+    source_gen_folder.mkdir(parents=True, exist_ok=True)
+
+    header_filename = include_gen_folder / "gdextension_interface_loader.hpp"
+    source_filename = source_gen_folder / "gdextension_interface_loader.cpp"
+
+    with open(interface_filepath, "rt", encoding="utf-8") as file:
+        data = json.load(file)
+
+    functions_by_version = {}
+    for func in data["interface"]:
+        since = func["since"]
+        if since not in functions_by_version:
+            functions_by_version[since] = []
+        functions_by_version[since].append(func)
+
+    with header_filename.open("wt", encoding="utf-8") as header_file:
+        header_file.write(generate_gdextension_interface_loader_header(functions_by_version))
+
+    with source_filename.open("wt", encoding="utf-8") as source_file:
+        source_file.write(generate_gdextension_interface_loader_source(functions_by_version))
+
+
+def gdextension_interface_type_name(name):
+    return "GDExtensionInterface" + "".join(word.capitalize() for word in name.split("_"))
+
+
+def generate_gdextension_interface_loader_header(data):
+    result = []
+    add_header("gdextension_interface_loader.hpp", result)
+
+    result.append("#pragma once")
+    result.append("")
+
+    result.append("#include <gdextension_interface.h>")
+    result.append("#include <godot_cpp/core/version.hpp>")
+    result.append("")
+
+    result.append("namespace godot {")
+    result.append("")
+    result.append("namespace gdextension_interface {")
+    result.append("")
+
+    versions = sorted(data.keys())
+    for version in versions:
+        (major, minor) = version.split(".")
+        result.append(f"// Godot 4.{minor} or newer.")
+        result.append(f"#if GODOT_VERSION_MINOR >= {minor}")
+
+        for func in data[version]:
+            name = func["name"]
+            fn = gdextension_interface_type_name(name)
+
+            if "deprecated" in func:
+                (deprecated_major, deprecated_minor) = func["deprecated"]["since"].split(".")
+                result.append(f"#if !defined(DISABLE_DEPRECATED) || GODOT_VERSION_MINOR < {deprecated_minor}")
+
+            result.append(f'extern "C" {fn} {name};')
+
+            if "deprecated" in func:
+                result.append("#endif")
+
+        result.append(f"#endif // GODOT_VERSION_MINOR >= {minor}")
+        result.append("")
+
+    result.append("} // namespace gdextension_interface")
+    result.append("")
+    result.append("namespace internal {")
+    result.append("")
+    result.append("bool load_gdextension_interface(GDExtensionInterfaceGetProcAddress p_get_proc_address);")
+    result.append("")
+    result.append("} // namespace internal")
+    result.append("")
+    result.append("} // namespace godot")
+
+    return "\n".join(result)
+
+
+def generate_gdextension_interface_loader_source(data):
+    result = []
+    add_header("gdextension_interface_loader.cpp", result)
+
+    result.append("#include <godot_cpp/core/error_macros.hpp>")
+    result.append("#include <godot_cpp/core/gdextension_interface_loader.hpp>")
+    result.append("#include <godot_cpp/core/load_proc_address.inc>")
+    result.append("")
+
+    result.append("namespace godot {")
+    result.append("")
+    result.append("namespace gdextension_interface {")
+    result.append("")
+
+    versions = sorted(data.keys())
+
+    for version in versions:
+        (major, minor) = version.split(".")
+        result.append(f"// Godot 4.{minor} or newer.")
+        result.append(f"#if GODOT_VERSION_MINOR >= {minor}")
+
+        for func in data[version]:
+            name = func["name"]
+            fn = gdextension_interface_type_name(name)
+
+            if "deprecated" in func:
+                (deprecated_major, deprecated_minor) = func["deprecated"]["since"].split(".")
+                result.append(f"#if !defined(DISABLE_DEPRECATED) || GODOT_VERSION_MINOR < {deprecated_minor}")
+
+            result.append(f"{fn} {name} = nullptr;")
+
+            if "deprecated" in func:
+                result.append("#endif")
+
+        result.append(f"#endif // GODOT_VERSION_MINOR >= {minor}")
+        result.append("")
+
+    result.append("} // namespace gdextension_interface")
+    result.append("")
+    result.append("namespace internal {")
+    result.append("")
+
+    result.append("bool load_gdextension_interface(GDExtensionInterfaceGetProcAddress p_get_proc_address) {")
+
+    for version in versions:
+        (major, minor) = version.split(".")
+        result.append(f"\t// Godot 4.{minor} or newer.")
+        result.append(f"#if GODOT_VERSION_MINOR >= {minor}")
+
+        for func in data[version]:
+            name = func["name"]
+            if name == "print_error":
+                # We manually load "print_error" early, so don't load it again here.
+                continue
+            fn = gdextension_interface_type_name(name)
+
+            if "deprecated" in func:
+                (deprecated_major, deprecated_minor) = func["deprecated"]["since"].split(".")
+                result.append(f"#if !defined(DISABLE_DEPRECATED) || GODOT_VERSION_MINOR < {deprecated_minor}")
+
+            result.append(f"\tLOAD_PROC_ADDRESS({name}, {fn});")
+
+            if "deprecated" in func:
+                result.append("#endif")
+
+        result.append(f"#endif // GODOT_VERSION_MINOR >= {minor}")
+        result.append("")
+
+    result.append("\treturn true;")
+    result.append("}")
+    result.append("")
+
+    result.append("} // namespace internal")
+    result.append("")
+    result.append("} // namespace godot")
+
+    return "\n".join(result)
 
 
 CLASS_ALIASES = {
@@ -321,7 +533,7 @@ native_structures = []
 singletons = []
 
 
-def generate_builtin_bindings(api, output_dir, build_config):
+def generate_builtin_bindings(api, output_dir, build_config, hooks=None):
     global builtin_classes
 
     core_gen_folder = Path(output_dir) / "include" / "godot_cpp" / "core"
@@ -425,10 +637,10 @@ def generate_builtin_bindings(api, output_dir, build_config):
         fully_used_classes.sort()
 
         with header_filename.open("w+", encoding="utf-8") as header_file:
-            header_file.write(generate_builtin_class_header(builtin_api, size, used_classes, fully_used_classes))
+            header_file.write(generate_builtin_class_header(builtin_api, size, used_classes, fully_used_classes, hooks))
 
         with source_filename.open("w+", encoding="utf-8") as source_file:
-            source_file.write(generate_builtin_class_source(builtin_api, size, used_classes, fully_used_classes))
+            source_file.write(generate_builtin_class_source(builtin_api, size, used_classes, fully_used_classes, hooks))
 
     # Create a header with all builtin types for convenience.
     builtin_header_filename = include_gen_folder / "builtin_types.hpp"
@@ -476,9 +688,8 @@ def generate_builtin_bindings(api, output_dir, build_config):
 
     # Create a header to implement all builtin class vararg methods and be included in "variant.hpp".
     builtin_vararg_methods_header = include_gen_folder / "builtin_vararg_methods.hpp"
-    builtin_vararg_methods_header.open("w+").write(
-        generate_builtin_class_vararg_method_implements_header(api["builtin_classes"])
-    )
+    with builtin_vararg_methods_header.open("w+", encoding="utf-8") as vararg_methods_file:
+        vararg_methods_file.write(generate_builtin_class_vararg_method_implements_header(api["builtin_classes"]))
 
 
 def generate_builtin_class_vararg_method_implements_header(builtin_classes):
@@ -504,7 +715,7 @@ def generate_builtin_class_vararg_method_implements_header(builtin_classes):
     return "\n".join(result)
 
 
-def generate_builtin_class_header(builtin_api, size, used_classes, fully_used_classes):
+def generate_builtin_class_header(builtin_api, size, used_classes, fully_used_classes, hooks=None):
     result = []
 
     class_name = builtin_api["name"]
@@ -516,6 +727,7 @@ def generate_builtin_class_header(builtin_api, size, used_classes, fully_used_cl
 
     result.append("")
     result.append("#include <godot_cpp/core/defs.hpp>")
+    result.append("#include <godot_cpp/core/math_defs.hpp>")
     result.append("")
 
     # Special cases.
@@ -587,7 +799,10 @@ def generate_builtin_class_header(builtin_api, size, used_classes, fully_used_cl
 
     result.append(f"class {class_name} {{")
     result.append(f"\tstatic constexpr size_t {snake_class_name}_SIZE = {size};")
-    result.append(f"\tuint8_t opaque[{snake_class_name}_SIZE] = {{}};")
+    # We don't get alignment information from the JSON so we have to guess.
+    # This logic should be correct for all built-in types as they exist right now.
+    alignment = 8 if size >= 8 else 4
+    result.append(f"\talignas({alignment}) uint8_t opaque[{snake_class_name}_SIZE] = {{}};")
 
     result.append("")
     result.append("\tfriend class Variant;")
@@ -957,9 +1172,11 @@ def generate_builtin_class_header(builtin_api, size, used_classes, fully_used_cl
     if class_name == "Dictionary":
         result.append("\tconst Variant &operator[](const Variant &p_key) const;")
         result.append("\tVariant &operator[](const Variant &p_key);")
+        result.append("#if GODOT_VERSION_MINOR >= 4")
         result.append(
             "\tvoid set_typed(uint32_t p_key_type, const StringName &p_key_class_name, const Variant &p_key_script, uint32_t p_value_type, const StringName &p_value_class_name, const Variant &p_value_script);"
         )
+        result.append("#endif")
 
     result.append("};")
 
@@ -989,10 +1206,13 @@ def generate_builtin_class_header(builtin_api, size, used_classes, fully_used_cl
 
     result.append("")
 
+    if hooks:
+        result = hooks.alter_builtin_class_header(builtin_api, result)
+
     return "\n".join(result)
 
 
-def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_classes):
+def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_classes, hooks=None):
     result = []
 
     class_name = builtin_api["name"]
@@ -1034,18 +1254,18 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
     result.append(f"void {class_name}::_init_bindings_constructors_destructor() {{")
 
     result.append(
-        f"\t_method_bindings.from_variant_constructor = internal::gdextension_interface_get_variant_to_type_constructor({enum_type_name});"
+        f"\t_method_bindings.from_variant_constructor = ::godot::gdextension_interface::get_variant_to_type_constructor({enum_type_name});"
     )
 
     if "constructors" in builtin_api:
         for constructor in builtin_api["constructors"]:
             result.append(
-                f"\t_method_bindings.constructor_{constructor['index']} = internal::gdextension_interface_variant_get_ptr_constructor({enum_type_name}, {constructor['index']});"
+                f"\t_method_bindings.constructor_{constructor['index']} = ::godot::gdextension_interface::variant_get_ptr_constructor({enum_type_name}, {constructor['index']});"
             )
 
     if builtin_api["has_destructor"]:
         result.append(
-            f"\t_method_bindings.destructor = internal::gdextension_interface_variant_get_ptr_destructor({enum_type_name});"
+            f"\t_method_bindings.destructor = ::godot::gdextension_interface::variant_get_ptr_destructor({enum_type_name});"
         )
 
     result.append("}")
@@ -1064,36 +1284,36 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
             # TODO: Add error check for hash mismatch.
             result.append(f'\t_gde_name = StringName("{method["name"]}");')
             result.append(
-                f"\t_method_bindings.method_{method['name']} = internal::gdextension_interface_variant_get_ptr_builtin_method({enum_type_name}, _gde_name._native_ptr(), {method['hash']});"
+                f"\t_method_bindings.method_{method['name']} = ::godot::gdextension_interface::variant_get_ptr_builtin_method({enum_type_name}, _gde_name._native_ptr(), {method['hash']});"
             )
 
     if "members" in builtin_api:
         for member in builtin_api["members"]:
             result.append(f'\t_gde_name = StringName("{member["name"]}");')
             result.append(
-                f"\t_method_bindings.member_{member['name']}_setter = internal::gdextension_interface_variant_get_ptr_setter({enum_type_name}, _gde_name._native_ptr());"
+                f"\t_method_bindings.member_{member['name']}_setter = ::godot::gdextension_interface::variant_get_ptr_setter({enum_type_name}, _gde_name._native_ptr());"
             )
             result.append(
-                f"\t_method_bindings.member_{member['name']}_getter = internal::gdextension_interface_variant_get_ptr_getter({enum_type_name}, _gde_name._native_ptr());"
+                f"\t_method_bindings.member_{member['name']}_getter = ::godot::gdextension_interface::variant_get_ptr_getter({enum_type_name}, _gde_name._native_ptr());"
             )
 
     if "indexing_return_type" in builtin_api:
         result.append(
-            f"\t_method_bindings.indexed_setter = internal::gdextension_interface_variant_get_ptr_indexed_setter({enum_type_name});"
+            f"\t_method_bindings.indexed_setter = ::godot::gdextension_interface::variant_get_ptr_indexed_setter({enum_type_name});"
         )
         result.append(
-            f"\t_method_bindings.indexed_getter = internal::gdextension_interface_variant_get_ptr_indexed_getter({enum_type_name});"
+            f"\t_method_bindings.indexed_getter = ::godot::gdextension_interface::variant_get_ptr_indexed_getter({enum_type_name});"
         )
 
     if "is_keyed" in builtin_api and builtin_api["is_keyed"]:
         result.append(
-            f"\t_method_bindings.keyed_setter = internal::gdextension_interface_variant_get_ptr_keyed_setter({enum_type_name});"
+            f"\t_method_bindings.keyed_setter = ::godot::gdextension_interface::variant_get_ptr_keyed_setter({enum_type_name});"
         )
         result.append(
-            f"\t_method_bindings.keyed_getter = internal::gdextension_interface_variant_get_ptr_keyed_getter({enum_type_name});"
+            f"\t_method_bindings.keyed_getter = ::godot::gdextension_interface::variant_get_ptr_keyed_getter({enum_type_name});"
         )
         result.append(
-            f"\t_method_bindings.keyed_checker = internal::gdextension_interface_variant_get_ptr_keyed_checker({enum_type_name});"
+            f"\t_method_bindings.keyed_checker = ::godot::gdextension_interface::variant_get_ptr_keyed_checker({enum_type_name});"
         )
 
     if "operators" in builtin_api:
@@ -1106,11 +1326,11 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
                         f"GDEXTENSION_VARIANT_TYPE_{camel_to_snake(operator['right_type']).upper()}"
                     )
                 result.append(
-                    f"\t_method_bindings.operator_{get_operator_id_name(operator['name'])}_{operator['right_type']} = internal::gdextension_interface_variant_get_ptr_operator_evaluator(GDEXTENSION_VARIANT_OP_{get_operator_id_name(operator['name']).upper()}, {enum_type_name}, {right_type_variant_type});"
+                    f"\t_method_bindings.operator_{get_operator_id_name(operator['name'])}_{operator['right_type']} = ::godot::gdextension_interface::variant_get_ptr_operator_evaluator(GDEXTENSION_VARIANT_OP_{get_operator_id_name(operator['name']).upper()}, {enum_type_name}, {right_type_variant_type});"
                 )
             else:
                 result.append(
-                    f"\t_method_bindings.operator_{get_operator_id_name(operator['name'])} = internal::gdextension_interface_variant_get_ptr_operator_evaluator(GDEXTENSION_VARIANT_OP_{get_operator_id_name(operator['name']).upper()}, {enum_type_name}, GDEXTENSION_VARIANT_TYPE_NIL);"
+                    f"\t_method_bindings.operator_{get_operator_id_name(operator['name'])} = ::godot::gdextension_interface::variant_get_ptr_operator_evaluator(GDEXTENSION_VARIANT_OP_{get_operator_id_name(operator['name']).upper()}, {enum_type_name}, GDEXTENSION_VARIANT_TYPE_NIL);"
                 )
 
     result.append("}")
@@ -1134,9 +1354,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
 
             result.append(method_signature)
 
-            method_call = (
-                f"\tinternal::_call_builtin_constructor(_method_bindings.constructor_{constructor['index']}, &opaque"
-            )
+            method_call = f"\t::godot::internal::_call_builtin_constructor(_method_bindings.constructor_{constructor['index']}, &opaque"
             if "arguments" in constructor:
                 if len(constructor["arguments"]) == 1 and constructor["arguments"][0]["type"] == class_name:
                     copy_constructor_index = constructor["index"]
@@ -1161,7 +1379,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
     result.append(f"{class_name}::{class_name}({class_name} &&p_other) {{")
     if needs_copy_instead_of_move(class_name) and copy_constructor_index >= 0:
         result.append(
-            f"\tinternal::_call_builtin_constructor(_method_bindings.constructor_{copy_constructor_index}, &opaque, &p_other);"
+            f"\t::godot::internal::_call_builtin_constructor(_method_bindings.constructor_{copy_constructor_index}, &opaque, &p_other);"
         )
     else:
         result.append("\tstd::swap(opaque, p_other.opaque);")
@@ -1193,16 +1411,16 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
             if "return_type" in method:
                 return_type = method["return_type"]
                 if is_enum(return_type):
-                    method_call += f"return ({get_gdextension_type(correct_type(return_type))})internal::_call_builtin_method_ptr_ret<int64_t>("
+                    method_call += f"return ({get_gdextension_type(correct_type(return_type))})::godot::internal::_call_builtin_method_ptr_ret<int64_t>("
                 elif is_pod_type(return_type) or is_variant(return_type):
-                    method_call += f"return internal::_call_builtin_method_ptr_ret<{get_gdextension_type(correct_type(return_type))}>("
+                    method_call += f"return ::godot::internal::_call_builtin_method_ptr_ret<{get_gdextension_type(correct_type(return_type))}>("
                 elif is_refcounted(return_type):
-                    method_call += f"return Ref<{return_type}>::_gde_internal_constructor(internal::_call_builtin_method_ptr_ret_obj<{return_type}>("
+                    method_call += f"return Ref<{return_type}>::_gde_internal_constructor(::godot::internal::_call_builtin_method_ptr_ret_obj<{return_type}>("
                     is_ref = True
                 else:
-                    method_call += f"return internal::_call_builtin_method_ptr_ret_obj<{return_type}>("
+                    method_call += f"return ::godot::internal::_call_builtin_method_ptr_ret_obj<{return_type}>("
             else:
-                method_call += "internal::_call_builtin_method_ptr_no_ret("
+                method_call += "::godot::internal::_call_builtin_method_ptr_no_ret("
             method_call += f"_method_bindings.method_{method['name']}, "
             if "is_static" in method and method["is_static"]:
                 method_call += "nullptr"
@@ -1235,7 +1453,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
             if f"get_{member['name']}" not in method_list:
                 result.append(f"{correct_type(member['type'])} {class_name}::get_{member['name']}() const {{")
                 result.append(
-                    f"\treturn internal::_call_builtin_ptr_getter<{correct_type(member['type'])}>(_method_bindings.member_{member['name']}_getter, (GDExtensionConstTypePtr)&opaque);"
+                    f"\treturn ::godot::internal::_call_builtin_ptr_getter<{correct_type(member['type'])}>(_method_bindings.member_{member['name']}_getter, (GDExtensionConstTypePtr)&opaque);"
                 )
                 result.append("}")
 
@@ -1260,7 +1478,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
                     (encode, arg_name) = get_encoded_arg("other", operator["right_type"], None)
                     result += encode
                     result.append(
-                        f"\treturn internal::_call_builtin_operator_ptr<{get_gdextension_type(correct_type(operator['return_type']))}>(_method_bindings.operator_{get_operator_id_name(operator['name'])}_{operator['right_type']}, (GDExtensionConstTypePtr)&opaque, (GDExtensionConstTypePtr){arg_name});"
+                        f"\treturn ::godot::internal::_call_builtin_operator_ptr<{get_gdextension_type(correct_type(operator['return_type']))}>(_method_bindings.operator_{get_operator_id_name(operator['name'])}_{operator['right_type']}, (GDExtensionConstTypePtr)&opaque, (GDExtensionConstTypePtr){arg_name});"
                     )
                     result.append("}")
                 else:
@@ -1268,7 +1486,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
                         f"{correct_type(operator['return_type'])} {class_name}::operator{get_operator_cpp_name(operator['name'])}() const {{"
                     )
                     result.append(
-                        f"\treturn internal::_call_builtin_operator_ptr<{get_gdextension_type(correct_type(operator['return_type']))}>(_method_bindings.operator_{get_operator_id_name(operator['name'])}, (GDExtensionConstTypePtr)&opaque, (GDExtensionConstTypePtr) nullptr);"
+                        f"\treturn ::godot::internal::_call_builtin_operator_ptr<{get_gdextension_type(correct_type(operator['return_type']))}>(_method_bindings.operator_{get_operator_id_name(operator['name'])}, (GDExtensionConstTypePtr)&opaque, (GDExtensionConstTypePtr) nullptr);"
                     )
                     result.append("}")
                 result.append("")
@@ -1285,7 +1503,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
         )
         result += encode
         result.append(
-            f"\tinternal::_call_builtin_constructor(_method_bindings.constructor_{copy_constructor_index}, &opaque, {arg_name});"
+            f"\t::godot::internal::_call_builtin_constructor(_method_bindings.constructor_{copy_constructor_index}, &opaque, {arg_name});"
         )
         result.append("\treturn *this;")
         result.append("}")
@@ -1293,12 +1511,7 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
 
     # Move assignment.
     result.append(f"{class_name} &{class_name}::operator=({class_name} &&p_other) {{")
-    if needs_copy_instead_of_move(class_name) and copy_constructor_index >= 0:
-        result.append(
-            f"\tinternal::_call_builtin_constructor(_method_bindings.constructor_{copy_constructor_index}, &opaque, &p_other);"
-        )
-    else:
-        result.append("\tstd::swap(opaque, p_other.opaque);")
+    result.append("\tstd::swap(opaque, p_other.opaque);")
     result.append("\treturn *this;")
     result.append("}")
 
@@ -1306,10 +1519,13 @@ def generate_builtin_class_source(builtin_api, size, used_classes, fully_used_cl
     result.append("} //namespace godot")
     result.append("")
 
+    if hooks:
+        result = hooks.alter_builtin_class_source(builtin_api, result)
+
     return "\n".join(result)
 
 
-def generate_engine_classes_bindings(api, output_dir, use_template_get_node):
+def generate_engine_classes_bindings(api, output_dir, use_template_get_node, hooks=None):
     global engine_classes
     global singletons
     global native_structures
@@ -1495,16 +1711,18 @@ def generate_engine_classes_bindings(api, output_dir, use_template_get_node):
         used_classes = list(used_classes)
         used_classes.sort()
         fully_used_classes = list(fully_used_classes)
+        if class_api["name"] == "RefCounted":
+            fully_used_classes.remove("Ref")  # Special case; Ref should include RefCounted but not vice versa.
         fully_used_classes.sort()
 
         with header_filename.open("w+", encoding="utf-8") as header_file:
             header_file.write(
-                generate_engine_class_header(class_api, used_classes, fully_used_classes, use_template_get_node)
+                generate_engine_class_header(class_api, used_classes, fully_used_classes, use_template_get_node, hooks)
             )
 
         with source_filename.open("w+", encoding="utf-8") as source_file:
             source_file.write(
-                generate_engine_class_source(class_api, used_classes, fully_used_classes, use_template_get_node)
+                generate_engine_class_source(class_api, used_classes, fully_used_classes, use_template_get_node, hooks)
             )
 
     for native_struct in api["native_structures"]:
@@ -1563,7 +1781,7 @@ def generate_engine_classes_bindings(api, output_dir, use_template_get_node):
             header_file.write("\n".join(result))
 
 
-def generate_engine_class_header(class_api, used_classes, fully_used_classes, use_template_get_node):
+def generate_engine_class_header(class_api, used_classes, fully_used_classes, use_template_get_node, hooks):
     global singletons
     result = []
 
@@ -1607,7 +1825,10 @@ def generate_engine_class_header(class_api, used_classes, fully_used_classes, us
         result.append("#include <godot_cpp/core/binder_common.hpp>")
         result.append("")
 
-    result.append("namespace godot {")
+    if class_name == "Mutex":
+        result.append("namespace godot::CoreBind {")
+    else:
+        result.append("namespace godot {")
     result.append("")
 
     for type_name in used_classes:
@@ -1650,7 +1871,13 @@ def generate_engine_class_header(class_api, used_classes, fully_used_classes, us
         for value in class_api["constants"]:
             if "type" not in value:
                 value["type"] = "int"
-            result.append(f"\tstatic const {value['type']} {value['name']} = {value['value']};")
+            const_value = value["value"]
+            if value["type"] == "int" and const_value == -2147483648:
+                # -2147483648 is a valid value for int, but MSVC doesn't read the whole thing as a literal,
+                # instead it sees 2147483648 (which is too big for an an int) and then applies the unary minus.
+                # This is a workaround for that.
+                const_value = "-2147483647 - 1"
+            result.append(f"\tstatic const {value['type']} {value['name']} = {const_value};")
         result.append("")
 
     if is_singleton:
@@ -1712,7 +1939,9 @@ def generate_engine_class_header(class_api, used_classes, fully_used_classes, us
                     # condition returns false (in such cases it can't compile due to ambiguity).
                     f"\t\tif constexpr (!std::is_same_v<decltype(&B::{method_name}), decltype(&T::{method_name})>) {{"
                 )
-                result.append(f"\t\t\tBIND_VIRTUAL_METHOD(T, {method_name}, {method['hash']});")
+                # If using an `extension_api.json` from Godot 4.3 or earlier, there will be no hash for virtual functions.
+                method_hash = method.get("hash", 0)
+                result.append(f"\t\t\tBIND_VIRTUAL_METHOD(T, {method_name}, {method_hash});")
                 result.append("\t\t}")
 
     result.append("\t}")
@@ -1758,6 +1987,9 @@ def generate_engine_class_header(class_api, used_classes, fully_used_classes, us
         result.append(
             "\tGroupID add_native_group_task(void (*p_func)(void *, uint32_t), void *p_userdata, int p_elements, int p_tasks = -1, bool p_high_priority = false, const String &p_description = String());"
         )
+
+    if class_name == "SceneTree":
+        result.append("\tstatic SceneTree *get_singleton();")
 
     if class_name == "Object":
         result.append("\ttemplate <typename T>")
@@ -1874,10 +2106,13 @@ def generate_engine_class_header(class_api, used_classes, fully_used_classes, us
 
     result.append("")
 
+    if hooks:
+        result = hooks.alter_engine_class_header(class_api, result)
+
     return "\n".join(result)
 
 
-def generate_engine_class_source(class_api, used_classes, fully_used_classes, use_template_get_node):
+def generate_engine_class_source(class_api, used_classes, fully_used_classes, use_template_get_node, hooks=None):
     global singletons
     result = []
 
@@ -1906,7 +2141,10 @@ def generate_engine_class_source(class_api, used_classes, fully_used_classes, us
 
         result.append("")
 
-    result.append("namespace godot {")
+    if class_name == "Mutex":
+        result.append("namespace godot::CoreBind {")
+    else:
+        result.append("namespace godot {")
     result.append("")
 
     if is_singleton:
@@ -1916,13 +2154,13 @@ def generate_engine_class_source(class_api, used_classes, fully_used_classes, us
         # We assume multi-threaded access is OK because each assignment will assign the same value every time
         result.append("\tif (unlikely(singleton == nullptr)) {")
         result.append(
-            f"\t\tGDExtensionObjectPtr singleton_obj = internal::gdextension_interface_global_get_singleton({class_name}::get_class_static()._native_ptr());"
+            f"\t\tGDExtensionObjectPtr singleton_obj = ::godot::gdextension_interface::global_get_singleton({class_name}::get_class_static()._native_ptr());"
         )
         result.append("#ifdef DEBUG_ENABLED")
         result.append("\t\tERR_FAIL_NULL_V(singleton_obj, nullptr);")
         result.append("#endif // DEBUG_ENABLED")
         result.append(
-            f"\t\tsingleton = reinterpret_cast<{class_name} *>(internal::gdextension_interface_object_get_instance_binding(singleton_obj, internal::token, &{class_name}::_gde_binding_callbacks));"
+            f"\t\tsingleton = reinterpret_cast<{class_name} *>(::godot::gdextension_interface::object_get_instance_binding(singleton_obj, ::godot::gdextension_interface::token, &{class_name}::_gde_binding_callbacks));"
         )
         result.append("#ifdef DEBUG_ENABLED")
         result.append("\t\tERR_FAIL_NULL_V(singleton, nullptr);")
@@ -1957,7 +2195,7 @@ def generate_engine_class_source(class_api, used_classes, fully_used_classes, us
 
             # Method body.
             result.append(
-                f'\tstatic GDExtensionMethodBindPtr _gde_method_bind = internal::gdextension_interface_classdb_get_method_bind({class_name}::get_class_static()._native_ptr(), StringName("{method["name"]}")._native_ptr(), {method["hash"]});'
+                f'\tstatic GDExtensionMethodBindPtr _gde_method_bind = ::godot::gdextension_interface::classdb_get_method_bind({class_name}::get_class_static()._native_ptr(), StringName("{method["name"]}")._native_ptr(), {method["hash"]});'
             )
             method_call = "\t"
             has_return = "return_value" in method and method["return_value"]["type"] != "void"
@@ -1976,34 +2214,30 @@ def generate_engine_class_source(class_api, used_classes, fully_used_classes, us
                     meta_type = method["return_value"]["meta"] if "meta" in method["return_value"] else None
                     if is_enum(return_type):
                         if method["is_static"]:
-                            method_call += f"return ({get_gdextension_type(correct_type(return_type, meta_type))})internal::_call_native_mb_ret<int64_t>(_gde_method_bind, nullptr"
+                            method_call += f"return ({get_gdextension_type(correct_type(return_type, meta_type))})::godot::internal::_call_native_mb_ret<int64_t>(_gde_method_bind, nullptr"
                         else:
-                            method_call += f"return ({get_gdextension_type(correct_type(return_type, meta_type))})internal::_call_native_mb_ret<int64_t>(_gde_method_bind, _owner"
+                            method_call += f"return ({get_gdextension_type(correct_type(return_type, meta_type))})::godot::internal::_call_native_mb_ret<int64_t>(_gde_method_bind, _owner"
                     elif is_pod_type(return_type) or is_variant(return_type):
                         if method["is_static"]:
-                            method_call += f"return internal::_call_native_mb_ret<{get_gdextension_type(correct_type(return_type, meta_type))}>(_gde_method_bind, nullptr"
+                            method_call += f"return ::godot::internal::_call_native_mb_ret<{get_gdextension_type(correct_type(return_type, meta_type))}>(_gde_method_bind, nullptr"
                         else:
-                            method_call += f"return internal::_call_native_mb_ret<{get_gdextension_type(correct_type(return_type, meta_type))}>(_gde_method_bind, _owner"
+                            method_call += f"return ::godot::internal::_call_native_mb_ret<{get_gdextension_type(correct_type(return_type, meta_type))}>(_gde_method_bind, _owner"
                     elif is_refcounted(return_type):
                         if method["is_static"]:
-                            method_call += f"return Ref<{return_type}>::_gde_internal_constructor(internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, nullptr"
+                            method_call += f"return Ref<{return_type}>::_gde_internal_constructor(::godot::internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, nullptr"
                         else:
-                            method_call += f"return Ref<{return_type}>::_gde_internal_constructor(internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, _owner"
+                            method_call += f"return Ref<{return_type}>::_gde_internal_constructor(::godot::internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, _owner"
                         is_ref = True
                     else:
                         if method["is_static"]:
-                            method_call += (
-                                f"return internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, nullptr"
-                            )
+                            method_call += f"return ::godot::internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, nullptr"
                         else:
-                            method_call += (
-                                f"return internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, _owner"
-                            )
+                            method_call += f"return ::godot::internal::_call_native_mb_ret_obj<{return_type}>(_gde_method_bind, _owner"
                 else:
                     if method["is_static"]:
-                        method_call += "internal::_call_native_mb_no_ret(_gde_method_bind, nullptr"
+                        method_call += "::godot::internal::_call_native_mb_no_ret(_gde_method_bind, nullptr"
                     else:
-                        method_call += "internal::_call_native_mb_no_ret(_gde_method_bind, _owner"
+                        method_call += "::godot::internal::_call_native_mb_no_ret(_gde_method_bind, _owner"
 
                 if "arguments" in method:
                     method_call += ", "
@@ -2020,7 +2254,7 @@ def generate_engine_class_source(class_api, used_classes, fully_used_classes, us
             else:  # vararg.
                 result.append("\tGDExtensionCallError error;")
                 result.append("\tVariant ret;")
-                method_call += "internal::gdextension_interface_object_method_bind_call(_gde_method_bind, _owner, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, &ret, &error"
+                method_call += "::godot::gdextension_interface::object_method_bind_call(_gde_method_bind, _owner, reinterpret_cast<GDExtensionConstVariantPtr *>(p_args), p_arg_count, &ret, &error"
 
             if is_ref:
                 method_call += ")"  # Close Ref<> constructor.
@@ -2056,10 +2290,13 @@ def generate_engine_class_source(class_api, used_classes, fully_used_classes, us
     result.append("} // namespace godot")
     result.append("")
 
+    if hooks:
+        result = hooks.alter_engine_class_source(class_api, result)
+
     return "\n".join(result)
 
 
-def generate_global_constants(api, output_dir):
+def generate_global_constants(api, output_dir, hooks=None):
     include_gen_folder = Path(output_dir) / "include" / "godot_cpp" / "classes"
     source_gen_folder = Path(output_dir) / "src" / "classes"
 
@@ -2080,8 +2317,24 @@ def generate_global_constants(api, output_dir):
     header.append("namespace godot {")
     header.append("")
 
-    if len(api["global_constants"]) > 0:
-        for constant in api["global_constants"]:
+    # Remove integer limit global constants that overlap with those defined in cstdint
+    limit_constants = {
+        "UINT8_MAX",
+        "UINT16_MAX",
+        "UINT32_MAX",
+        "INT8_MIN",
+        "INT8_MAX",
+        "INT16_MIN",
+        "INT16_MAX",
+        "INT32_MIN",
+        "INT32_MAX",
+        "INT64_MIN",
+        "INT64_MAX",
+    }
+    global_constants = [c for c in api["global_constants"] if c["name"] not in limit_constants]
+
+    if len(global_constants) > 0:
+        for constant in global_constants:
             header.append(f"const int64_t {escape_identifier(constant['name'])} = {constant['value']};")
 
         header.append("")
@@ -2103,6 +2356,9 @@ def generate_global_constants(api, output_dir):
     header.append("} // namespace godot")
 
     header.append("")
+
+    if hooks:
+        header = hooks.alter_global_constants(api, header)
 
     with header_filename.open("w+", encoding="utf-8") as header_file:
         header_file.write("\n".join(header))
@@ -2170,7 +2426,7 @@ def generate_global_constant_binds(api, output_dir):
         header_file.write("\n".join(header))
 
 
-def generate_utility_functions(api, output_dir):
+def generate_utility_functions(api, output_dir, hooks=None):
     include_gen_folder = Path(output_dir) / "include" / "godot_cpp" / "variant"
     source_gen_folder = Path(output_dir) / "src" / "variant"
 
@@ -2224,6 +2480,9 @@ def generate_utility_functions(api, output_dir):
     header.append("} // namespace godot")
     header.append("")
 
+    if hooks:
+        header = hooks.alter_utility_functions_header(api, header)
+
     with header_filename.open("w+", encoding="utf-8") as header_file:
         header_file.write("\n".join(header))
 
@@ -2253,7 +2512,7 @@ def generate_utility_functions(api, output_dir):
         # Function body.
 
         source.append(
-            f'\tstatic GDExtensionPtrUtilityFunction _gde_function = internal::gdextension_interface_variant_get_ptr_utility_function(StringName("{function["name"]}")._native_ptr(), {function["hash"]});'
+            f'\tstatic GDExtensionPtrUtilityFunction _gde_function = ::godot::gdextension_interface::variant_get_ptr_utility_function(StringName("{function["name"]}")._native_ptr(), {function["hash"]});'
         )
         has_return = "return_type" in function and function["return_type"] != "void"
         if has_return:
@@ -2268,11 +2527,11 @@ def generate_utility_functions(api, output_dir):
             if has_return:
                 function_call += "return "
                 if function["return_type"] == "Object":
-                    function_call += "internal::_call_utility_ret_obj(_gde_function"
+                    function_call += "::godot::internal::_call_utility_ret_obj(_gde_function"
                 else:
-                    function_call += f"internal::_call_utility_ret<{get_gdextension_type(correct_type(function['return_type']))}>(_gde_function"
+                    function_call += f"::godot::internal::_call_utility_ret<{get_gdextension_type(correct_type(function['return_type']))}>(_gde_function"
             else:
-                function_call += "internal::_call_utility_no_ret(_gde_function"
+                function_call += "::godot::internal::_call_utility_no_ret(_gde_function"
 
             if "arguments" in function:
                 function_call += ", "
@@ -2303,6 +2562,10 @@ def generate_utility_functions(api, output_dir):
         source.append("")
 
     source.append("} // namespace godot")
+    source.append("")
+
+    if hooks:
+        header = hooks.alter_utility_functions_source(api, source)
 
     with source_filename.open("w+", encoding="utf-8") as source_file:
         source_file.write("\n".join(source))
@@ -2708,6 +2971,8 @@ def is_included(type_name, current_type):
 
 def correct_default_value(value, type_name):
     value_map = {
+        "inf": "Math::INF",
+        "nan": "Math::NaN",
         "null": "nullptr",
         '""': "String()",
         '&""': "StringName()",
@@ -2745,12 +3010,12 @@ def correct_typed_dictionary(type_name):
 def correct_type(type_name, meta=None, use_alias=True):
     type_conversion = {"float": "double", "int": "int64_t", "Nil": "Variant"}
     if meta is not None:
-        if "int" in meta:
+        if meta in ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]:
             return f"{meta}_t"
-        elif "char" in meta:
-            return f"{meta}_t"
-        else:
+        elif meta in ["float", "double"]:
             return meta
+        elif meta in ["char16", "char32"]:
+            return f"{meta}_t"
     if type_name in type_conversion:
         return type_conversion[type_name]
     if type_name.startswith("typedarray::"):

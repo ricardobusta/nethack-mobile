@@ -21,7 +21,8 @@ compromises need to be made to resolve those differences.
 As we are attempting to maintain feature parity, and ease of maintenance, these
 CMake scripts are built to resemble the SCons build system wherever possible.
 Where they are not, we will attempt to document common difference in
-doc/cmake.rst and platform specific differences in their respective
+the docs (https://docs.godotengine.org/en/latest/tutorials/scripting/cpp/build_system/cmake.html)
+and platform specific differences in their respective
 cmake/<platform>.cmake file.
 
 The file structure and file content are made to match, if not in content then
@@ -54,11 +55,18 @@ endif()
 # Define our project.
 project(
     godot-cpp
-    VERSION 4.4
+    VERSION 10.0
     DESCRIPTION "C++ bindings for the Godot Engine's GDExtensions API."
     HOMEPAGE_URL "https://github.com/godotengine/godot-cpp"
     LANGUAGES CXX
 )
+
+# Set the default API version for the test project.
+# We're only setting this here because the test project is built weird;
+# in a normal project, it would be set before including this CMakeLists.txt.
+if(GODOTCPP_ENABLE_TESTING)
+    set(GODOTCPP_DEFAULT_API_VERSION "4.7")
+endif()
 
 compiler_detection()
 godotcpp_generate()

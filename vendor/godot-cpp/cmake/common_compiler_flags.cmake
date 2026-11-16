@@ -66,9 +66,6 @@ function(common_compiler_flags)
         # The public flag tells CMake that the following options are transient,
         # and will propagate to consumers.
         PUBLIC
-            # Disable exception handling. Godot doesn't use exceptions anywhere, and this
-            # saves around 20% of binary size and very significant build time.
-            $<${DISABLE_EXCEPTIONS}:$<${NOT_MSVC}:-fno-exceptions>>
 
             # Enabling Debug Symbols
             $<${DEBUG_SYMBOLS}:
@@ -91,10 +88,16 @@ function(common_compiler_flags)
 
                 # Interpret source files as utf-8
                 /utf-8
+
+                # Allow use of `__cplusplus` macro to determine C++ standard universally.
+                /Zc:__cplusplus
             >
 
         # Warnings below, these do not need to propagate to consumers.
         PRIVATE
+            # Disable exception handling. Godot doesn't use exceptions anywhere, and this
+            # saves around 20% of binary size and very significant build time.
+            $<${DISABLE_EXCEPTIONS}:$<${NOT_MSVC}:-fno-exceptions>>
             $<${IS_MSVC}:
                 /W4      # Warning level 4 (informational) warnings that aren't off by default.
 
@@ -170,6 +173,8 @@ function(common_compiler_flags)
             $<${IS_MSVC}:$<${DISABLE_EXCEPTIONS}:_HAS_EXCEPTIONS=0>>
 
             $<${THREADS_ENABLED}:THREADS_ENABLED>
+
+            $<$<NOT:$<BOOL:${GODOTCPP_DEPRECATED}>>:DISABLE_DEPRECATED>
     )
 
     target_link_options(

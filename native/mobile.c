@@ -15,7 +15,7 @@ void shim_graphics_set_callback(shim_callback_t);
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
 static pthread_t worker;
-static int running, joinable, stopping, suspending, answered;
+static int running, joinable, stopping, suspending, answered, interrupted, suspended_saved;
 static uint64_t sequence, pending;
 static nm_input answer;
 static char game_directory[4096], sysconf_file[4096], player_name[64];
@@ -26,6 +26,15 @@ static int window_type[256], next_window;
 typedef struct menu_entry { anything id; int selectable; } menu_entry;
 static menu_entry *menus[256];
 static int menu_count[256], menu_capacity[256];
+static char status_names[MAXBLSTATS][64];
+static int status_enabled[MAXBLSTATS];
+
+/* Terminal facilities have no role in the embedded mobile window port. */
+void intron(void) {}
+void introff(void) {}
+void check_linux_console(void) {}
+void init_linux_cons(void) {}
+int dosuspend(void) { nm_suspend(); return ECMD_OK; }
 
 const char *nm_game_directory(void) { return game_directory; }
 const char *nm_sysconf_file(void) { return sysconf_file; }
@@ -65,11 +74,19 @@ static nm_event event(int type, const char *text) {
     return e;
 }
 
+void error(const char *format, ...) {
+    nm_event e = event(NM_MESSAGE, NULL);
+    va_list args; va_start(args, format);
+    vsnprintf(e.text, sizeof e.text, format, args); va_end(args);
+    push(e);
+    nh_terminate(EXIT_FAILURE);
+}
+
 static nm_input request(const char *kind, const char *prompt, const char *choices, int how, int window) {
     nm_event e = event(NM_PROMPT, prompt);
     e.values[0] = !strcmp(kind, "command") ? 0 : !strcmp(kind, "key") ? 1 :
                   !strcmp(kind, "yesno") ? 2 : !strcmp(kind, "text") ? 3 :
-                  !strcmp(kind, "menu") ? 4 : 5;
+                  !strcmp(kind, "menu") ? 4 : !strcmp(kind, "position") ? 6 : 5;
     e.values[1] = how; e.values[2] = window;
     if (choices) snprintf(e.text + strlen(e.text) + 1, sizeof e.text - strlen(e.text) - 1, "%s", choices);
     pthread_mutex_lock(&mutex);
@@ -91,9 +108,11 @@ static nm_input request(const char *kind, const char *prompt, const char *choice
         if (program_state.something_worth_saving && !program_state.gameover) {
             program_state.done_hup = 1;
             if (dosave0()) {
+                suspended_saved = 1;
                 clearlocks();
                 nh_terminate(EXIT_SUCCESS);
             }
+            push(event(NM_MESSAGE, "Save failed. Existing recovery files have been preserved."));
         }
         nh_terminate(stop ? EXIT_FAILURE : EXIT_SUCCESS);
     }
@@ -116,6 +135,12 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         iflags.wc_mouse_support = 1;
         flags.travelcmd = TRUE;
         flags.legacy = FALSE;
+    } else if (!strcmp(name, "shim_get_nh_event")) {
+        pthread_mutex_lock(&mutex); int cancel = interrupted || stopping || suspending; interrupted = 0; pthread_mutex_unlock(&mutex);
+        if (cancel && program_state.something_worth_saving) {
+            nomul(0);
+            if (go.occupation) stop_occupation();
+        }
     } else if (!strcmp(name, "shim_player_selection")) {
         genl_player_setup(80);
     } else if (!strcmp(name, "shim_askname")) {
@@ -200,11 +225,12 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         *((int *)ret) = input.key == 27 ? -1 : count;
     } else if (!strcmp(name, "shim_nhgetch") || !strcmp(name, "shim_nh_poskey")) {
         int position = !strcmp(name, "shim_nh_poskey");
-        if (position && program_state.something_worth_saving && !program_state.gameover && !gm.multi && !go.occupation) {
+        int command = position && iflags.in_parse && program_state.input_state == commandInp;
+        if (command && program_state.something_worth_saving && !program_state.gameover && !gm.multi && !go.occupation) {
             save_currentstate();
         }
         e = event(NM_READY, NULL); e.values[0] = u.ux; e.values[1] = u.uy; e.values[2] = svm.moves; push(e);
-        nm_input input = request(position ? "command" : "key", position ? "Your move" : "Choose a key or direction", NULL, 0, 0);
+        nm_input input = request(command ? "command" : position ? "position" : "key", command ? "Your move" : position ? "Choose a map target, direction, or key" : "Choose a key or direction", NULL, 0, 0);
         if (position && input.type == NM_POSITION && input.x > 0 && input.x < COLNO && input.y >= 0 && input.y < ROWNO) {
             coordxy *x = va_arg(a, coordxy *), *y = va_arg(a, coordxy *); int *mod = va_arg(a, int *);
             *x = input.x; *y = input.y; *mod = CLICK_1; *((int *)ret) = 0;
@@ -232,13 +258,32 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
             if (!(f & (INTERNALCMD | CMD_NOT_AVAILABLE)) && (!(f & WIZMODECMD) || wizard)) chosen = i;
         }
         *((int *)ret) = chosen;
+    } else if (!strcmp(name, "shim_status_enablefield")) {
+        int field = va_arg(a, int); const char *name_text = va_arg(a, const char *);
+        (void)va_arg(a, const char *); int enabled = va_arg(a, int);
+        if (field >= 0 && field < MAXBLSTATS) {
+            snprintf(status_names[field], sizeof status_names[field], "%s", name_text ? name_text : "");
+            status_enabled[field] = enabled;
+            if (!enabled) { e = event(NM_STATUS, ""); e.values[0] = field; push(e); }
+        }
     } else if (!strcmp(name, "shim_status_update")) {
         int field = va_arg(a, int); void *value = va_arg(a, void *);
         int change = va_arg(a, int), percent = va_arg(a, int), color = va_arg(a, int);
-        if (field >= 0 && field != BL_CONDITION) {
-            e = event(NM_STATUS, value ? (const char *)value : ""); e.values[0] = field; e.values[1] = percent; e.values[2] = color; push(e);
+        if (field >= 0 && field != BL_CONDITION && field < MAXBLSTATS && status_enabled[field]) {
+            e = event(NM_STATUS, "");
+            const char *text = value ? (const char *)value : "";
+            if (field == BL_GOLD && strrchr(text, ':')) text = strrchr(text, ':') + 1;
+            if (*text) snprintf(e.text, sizeof e.text, "%s: %s", status_names[field], text);
+            e.values[0] = field; e.values[1] = percent; e.values[2] = color; push(e);
         } else if (field == BL_CONDITION) {
-            e = event(NM_STATUS, NULL); e.values[0] = field; e.values[3] = value ? *(unsigned long *)value : 0; push(e);
+            static const char *conditions[] = {"Bare-handed", "Blind", "Busy", "Confused", "Deaf", "Iron", "Flying", "Food poisoning", "Glowing hands", "Grabbed", "Hallucinating", "Held", "Ice", "Lava", "Levitating", "Paralyzed", "Riding", "Sleeping", "Sliming", "Slippery", "Petrifying", "Strangled", "Stunned", "Submerged", "Terminally ill", "Tethered", "Trapped", "Unconscious", "Wounded legs", "Holding"};
+            unsigned long bits = value ? *(unsigned long *)value : 0;
+            e = event(NM_STATUS, NULL); e.values[0] = field;
+            for (int i = 0; i < 30; ++i) if (bits & (1UL << i)) {
+                if (*e.text) strncat(e.text, ", ", sizeof e.text - strlen(e.text) - 1);
+                strncat(e.text, conditions[i], sizeof e.text - strlen(e.text) - 1);
+            }
+            push(e);
         }
     } else if (!strcmp(name, "shim_message_menu")) {
         int letter = va_arg(a, int), how = va_arg(a, int); const char *text = va_arg(a, const char *);
@@ -258,12 +303,13 @@ static void *run_engine(void *unused) {
     }
     for (int i = 0; i < 256; ++i) { free(menus[i]); menus[i] = NULL; menu_count[i] = menu_capacity[i] = 0; }
     pthread_mutex_lock(&mutex); running = 0; pending = 0; pthread_mutex_unlock(&mutex);
-    nm_event e = event(NM_ENDED, NULL); e.values[0] = code ? code - 1 : 0; push(e);
+    nm_event e = event(NM_ENDED, NULL); e.values[0] = code ? code - 1 : 0; e.values[1] = suspended_saved; push(e);
     return NULL;
 }
 
 int nm_running(void) { pthread_mutex_lock(&mutex); int result = running; pthread_mutex_unlock(&mutex); return result; }
 void nm_suspend(void) { pthread_mutex_lock(&mutex); suspending = 1; pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex); }
+void nm_interrupt(void) { pthread_mutex_lock(&mutex); interrupted = 1; pthread_mutex_unlock(&mutex); }
 void nm_stop(void) {
     pthread_mutex_lock(&mutex); stopping = 1; pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex);
     if (joinable) { pthread_join(worker, NULL); joinable = 0; }
@@ -283,7 +329,8 @@ int nm_start(const char *directory, const char *name) {
     snprintf(player_name, sizeof player_name, "%s", name);
     next_window = 0; memset(window_type, 0, sizeof window_type);
     nm_event stale; while (nm_poll(&stale)) {}
-    pthread_mutex_lock(&mutex); stopping = suspending = answered = 0; pending = 0; running = 1; pthread_mutex_unlock(&mutex);
+    memset(status_names, 0, sizeof status_names); memset(status_enabled, 0, sizeof status_enabled);
+    pthread_mutex_lock(&mutex); stopping = suspending = answered = interrupted = suspended_saved = 0; pending = 0; running = 1; pthread_mutex_unlock(&mutex);
     if (pthread_create(&worker, NULL, run_engine, NULL)) { pthread_mutex_lock(&mutex); running = 0; pthread_mutex_unlock(&mutex); return 0; }
     joinable = 1; return 1;
 }

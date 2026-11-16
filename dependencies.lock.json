@@ -6,9 +6,11 @@
     "tree_sha256": "6b734f59badf25f4537bb6631f1e670e33b2c65e490d2d85fb912e1a8df0e184"
   },
   "godot-cpp": {
-    "url": "https://api.github.com/repos/godotengine/godot-cpp/tarball/godot-4.5-stable",
-    "archive_sha256": "be962b587573cc3a167cce200759f41e800e93fa0899a65d2048bd1be2d6211c",
-    "archive_root": "godotengine-godot-cpp-e83fd09",
-    "tree_sha256": "7dcd207850e0d2ed71d9f7992794dd806fc2fbaaa56b7e8584a2493c9226a40e"
+    "version": "10.0.0-stable",
+    "target_api": "4.7",
+    "url": "https://api.github.com/repos/godotengine/godot-cpp/tarball/10.0.0-stable",
+    "archive_sha256": "8878af62f98b867a424e7d0a3a1912251479387eda462f1ff82711a013dd01c5",
+    "archive_root": "godotengine-godot-cpp-507ed9d",
+    "tree_sha256": "ab66c7ae43811246e22e47346349817df9c9cd416a0ab241c7cf5667f154dcb3"
   }
 }
