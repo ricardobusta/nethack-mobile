@@ -1,0 +1,15 @@
+--- a/src/botl.c
++++ b/src/botl.c
+@@ -1758,7 +1758,12 @@
+ staticfn void
+ init_blstats(void)
+ {
++#ifdef NH_MOBILE
++    /* NetHack Mobile: changed 2026-11-16; new session resets gb.blstats. */
++    boolean initalready = FALSE;
++#else
+     static boolean initalready = FALSE;
++#endif
+     int i, j;
+ 
+     if (initalready) {

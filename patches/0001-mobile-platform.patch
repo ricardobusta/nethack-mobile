@@ -1,0 +1,82 @@
+--- a/include/config.h
++++ b/include/config.h
+@@ -231,7 +231,13 @@
+ 
+ #ifndef SYSCF
+ #define SYSCF                /* use a global configuration */
++#ifdef NH_MOBILE
++/* NetHack Mobile: changed 2026-11-16; available during early_init(). */
++extern const char *nm_sysconf_file(void);
++#define SYSCF_FILE nm_sysconf_file()
++#else
+ #define SYSCF_FILE "sysconf" /* global configuration is in a file */
++#endif
+ #endif
+ 
+ #ifndef GDBPATH
+@@ -703,6 +709,11 @@
+ #include "cstd.h"
+ #include "integer.h"
+ #include "global.h" /* Define everything else according to choices above */
++
++#ifdef NH_MOBILE
++/* NetHack Mobile: changed 2026-11-16; app-private absolute prefixes. */
++#undef CHDIR
++#endif
+ 
+ /* Place the following after #include [platform]conf.h in global.h so that
+    overrides are possible in there, for things like unix-specific file
+--- a/sys/unix/unixmain.c
++++ b/sys/unix/unixmain.c
+@@ -64,8 +64,14 @@
+     boolean plsel_once = FALSE;
+ 
+     early_init(argc, argv);
+-
+-#if defined(__APPLE__)
++#ifdef NH_MOBILE
++    /* NetHack Mobile: changed 2026-11-16; app-private absolute prefixes. */
++    extern const char *nm_game_directory(void);
++    for (int p = 0; p < PREFIX_COUNT; ++p)
++        gf.fqn_prefix[p] = dupstr(nm_game_directory());
++#endif
++
++#if defined(__APPLE__) && !defined(NH_MOBILE)
+     {
+ /* special hack to change working directory to a resource fork when
+    running from finder --sam */
+@@ -99,7 +105,9 @@
+ 
+     gh.hname = argv[0];
+     svh.hackpid = getpid();
++#ifndef NH_MOBILE
+     (void) umask(0777 & ~FCMASK);
++#endif
+ 
+     choose_windows(DEFAULT_WINDOW_SYS);
+ 
+@@ -202,8 +210,10 @@
+         gl.locknum = 0;
+     } else {
+         /* suppress interrupts while processing lock file */
++#ifndef NH_MOBILE
+         (void) signal(SIGQUIT, SIG_IGN);
+         (void) signal(SIGINT, SIG_IGN);
++#endif
+     }
+ 
+     dlb_init(); /* must be before newgame() */
+--- a/sys/unix/unixunix.c
++++ b/sys/unix/unixunix.c
+@@ -175,8 +175,11 @@
+         /* veryold() no longer conditionally closes fd */
+         too_old = veryold(fd);
+         (void) close(fd);
++#ifndef NH_MOBILE
+         if (too_old && eraseoldlocks())
+             goto gotlock;
++#endif
++        /* NetHack Mobile: changed 2026-11-16; preserve crash checkpoints. */
+ 
+         /* drop the "perm" lock while the user decides */
+         unlock_file(HLOCK);
