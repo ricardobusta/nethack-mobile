@@ -79,6 +79,10 @@ func _tap(position: Vector2) -> void:
 	tile_pressed.emit(cell)
 
 func _gui_input(event: InputEvent) -> void:
+	# Controls use emulated mouse clicks; this map handles native multi-touch.
+	if event is InputEventMouse and event.device == -1:
+		accept_event()
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			pointers[event.index] = event.position

@@ -22,7 +22,8 @@ static char game_directory[4096], sysconf_file[4096], player_name[64];
 static jmp_buf termination;
 typedef struct event_node { nm_event event; struct event_node *next; } event_node;
 static event_node *head, *tail;
-static int window_type[256], next_window;
+static int queued;
+static int window_type[256];
 typedef struct menu_entry { anything id; int selectable; } menu_entry;
 static menu_entry *menus[256];
 static int menu_count[256], menu_capacity[256];
@@ -49,8 +50,13 @@ static void push(nm_event e) {
     if (!node) nm_engine_exit(EXIT_FAILURE);
     node->event = e;
     pthread_mutex_lock(&mutex);
+    while (queued >= 2048 && !stopping && !suspending) pthread_cond_wait(&condition, &mutex);
+    if (queued >= 2048 && e.type != NM_ENDED && e.type != NM_MESSAGE) {
+        pthread_mutex_unlock(&mutex); free(node); return;
+    }
     if (tail) tail->next = node; else head = node;
     tail = node;
+    ++queued;
     pthread_cond_broadcast(&condition);
     pthread_mutex_unlock(&mutex);
 }
@@ -62,7 +68,9 @@ int nm_poll(nm_event *e) {
         *e = node->event;
         head = node->next;
         if (!head) tail = NULL;
+        --queued;
         free(node);
+        pthread_cond_broadcast(&condition);
     }
     pthread_mutex_unlock(&mutex);
     return node != NULL;
@@ -146,13 +154,18 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
     } else if (!strcmp(name, "shim_askname")) {
         snprintf(svp.plname, sizeof svp.plname, "%s", player_name);
     } else if (!strcmp(name, "shim_create_nhwindow")) {
-        int type = va_arg(a, int), w = ++next_window;
+        int type = va_arg(a, int), w = 1;
+        while (w < 256 && window_type[w]) ++w;
         if (w >= 256) nm_engine_exit(EXIT_FAILURE);
         window_type[w] = type; *((int *)ret) = w;
         e = event(NM_WINDOW, NULL); e.values[0] = w; e.values[1] = type; push(e);
     } else if (!strcmp(name, "shim_clear_nhwindow") || !strcmp(name, "shim_destroy_nhwindow")) {
         e = event(!strcmp(name, "shim_clear_nhwindow") ? NM_CLEAR : NM_DESTROY, NULL);
-        e.values[0] = va_arg(a, int); push(e);
+        int w = va_arg(a, int); e.values[0] = w;
+        if (e.type == NM_DESTROY && w > 0 && w < 256) {
+            window_type[w] = 0; free(menus[w]); menus[w] = NULL; menu_count[w] = menu_capacity[w] = 0;
+        }
+        push(e);
     } else if (!strcmp(name, "shim_putstr")) {
         int w = va_arg(a, int), attr = va_arg(a, int);
         e = event(NM_MESSAGE, va_arg(a, const char *)); e.values[0] = w; e.values[1] = attr; e.values[2] = window_type[w]; push(e);
@@ -315,7 +328,9 @@ void nm_stop(void) {
     if (joinable) { pthread_join(worker, NULL); joinable = 0; }
 }
 int nm_start(const char *directory, const char *name) {
-    if (nm_running() || !directory || !name || strlen(directory) >= sizeof game_directory - 2) return 0;
+    if (nm_running() || !directory || !name || strlen(directory) > 400 || !*name || strlen(name) > 24) return 0;
+    if (!((*name >= 'A' && *name <= 'Z') || (*name >= 'a' && *name <= 'z'))) return 0;
+    for (const char *p = name; *p; ++p) if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '_')) return 0;
     if (joinable) { pthread_join(worker, NULL); joinable = 0; }
     snprintf(game_directory, sizeof game_directory, "%s/", directory);
     snprintf(sysconf_file, sizeof sysconf_file, "%s/sysconf", directory);
@@ -327,7 +342,7 @@ int nm_start(const char *directory, const char *name) {
         fclose(file);
     }
     snprintf(player_name, sizeof player_name, "%s", name);
-    next_window = 0; memset(window_type, 0, sizeof window_type);
+    memset(window_type, 0, sizeof window_type);
     nm_event stale; while (nm_poll(&stale)) {}
     memset(status_names, 0, sizeof status_names); memset(status_enabled, 0, sizeof status_enabled);
     pthread_mutex_lock(&mutex); stopping = suspending = answered = interrupted = suspended_saved = 0; pending = 0; running = 1; pthread_mutex_unlock(&mutex);

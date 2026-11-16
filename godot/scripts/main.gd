@@ -9,17 +9,21 @@ var session: RefCounted
 var map: Control
 var page: VBoxContainer
 var header: HBoxContainer
+var body: BoxContainer
+var info_column: VBoxContainer
 var status: Label
 var message: Label
 var hint: Label
 var action_bar: HFlowContainer
 var overlay: PanelContainer
 var overlay_box: VBoxContainer
+var overlay_notice: Label
 var menu_list: VBoxContainer
 var search: LineEdit
 var root_margin: MarginContainer
 var active_prompt: Dictionary = {}
 var windows: Dictionary = {}
+var window_types: Dictionary = {}
 var menus: Dictionary = {}
 var titles: Dictionary = {}
 var commands: Array[Dictionary] = []
@@ -58,11 +62,18 @@ func _ready() -> void:
 func _button(text: String, callback: Callable, parent: Node, compact := false) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(76 if compact else 96, 72 * ui_scale)
+	b.custom_minimum_size = Vector2(76 if compact else 96, _touch_size())
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.pressed.connect(callback)
 	parent.add_child(b)
 	return b
+
+func _touch_size() -> float:
+	if not OS.has_feature("mobile"):
+		return 72.0 * ui_scale
+	var density := maxf(1.0, float(DisplayServer.screen_get_dpi()) / 160.0)
+	var pixels_per_unit := float(get_window().size.y) / maxf(1.0, get_viewport_rect().size.y)
+	return maxf(72.0 * ui_scale, 48.0 * density / maxf(0.1, pixels_per_unit))
 
 func _build_ui() -> void:
 	root_margin = MarginContainer.new()
@@ -80,21 +91,30 @@ func _build_ui() -> void:
 	header.add_child(title)
 	_button("ASCII", _toggle_mode, header, true).name = "Mode"
 	_button("☰", _show_settings, header, true)
+	body = BoxContainer.new()
+	body.vertical = true
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 14)
+	page.add_child(body)
+	info_column = VBoxContainer.new()
+	info_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(info_column)
 	status = Label.new()
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.text = "NetHack %s · Offline · NGPL" % engine_version
-	page.add_child(status)
+	info_column.add_child(status)
 	message = Label.new()
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	message.max_lines_visible = 3
 	message.custom_minimum_size.y = 86
-	page.add_child(message)
+	info_column.add_child(message)
 	map = MapView.new()
 	map.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map.custom_minimum_size.y = 160
 	map.tiled = bool(settings.get_value("ui", "tiles", true))
 	map.tile_pressed.connect(_tile_pressed)
-	page.add_child(map)
+	body.add_child(map)
 	hint = Label.new()
 	hint.text = "Tap a destination · Pinch to zoom · Drag to explore"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -111,16 +131,28 @@ func _build_ui() -> void:
 	_button("Stop", func(): _send_key(27), navigation, true)
 	_button("Center", func(): map.recenter(), navigation, true)
 	overlay = PanelContainer.new()
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color("101925")
+	panel_style.content_margin_left = 16
+	panel_style.content_margin_right = 16
+	panel_style.content_margin_top = 16
+	panel_style.content_margin_bottom = 16
+	overlay.add_theme_stylebox_override("panel", panel_style)
 	add_child(overlay)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay_box = VBoxContainer.new()
 	overlay_box.add_theme_constant_override("separation", 12)
 	overlay.add_child(overlay_box)
+	overlay.visibility_changed.connect(func(): page.visible = not overlay.visible)
 	overlay.hide()
 
 func _layout() -> void:
 	var viewport := get_viewport_rect().size
+	var landscape := viewport.x > viewport.y
+	body.vertical = not landscape
+	info_column.custom_minimum_size.x = clampf(viewport.x * 0.28, 280, 400) if landscape else 0
+	info_column.size_flags_horizontal = Control.SIZE_FILL if landscape else Control.SIZE_EXPAND_FILL
 	var safe := DisplayServer.get_display_safe_area()
 	var screen := DisplayServer.screen_get_size()
 	var left := 12.0
@@ -145,6 +177,7 @@ func _layout() -> void:
 	overlay.offset_right = -right - 6
 	overlay.offset_bottom = -bottom - 6
 	message.max_lines_visible = 2 if viewport.x > viewport.y else 3
+	message.custom_minimum_size.y = 48 if viewport.x > viewport.y else 86
 
 func _refresh_actions() -> void:
 	for child in action_bar.get_children():
@@ -162,7 +195,18 @@ func _clear_overlay(title: String) -> void:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size", int(28 * ui_scale))
 	overlay_box.add_child(label)
+	overlay_notice = Label.new()
+	overlay_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	overlay_notice.add_theme_color_override("font_color", Color("ffb0a8"))
+	overlay_box.add_child(overlay_notice)
+	overlay_notice.hide()
 	overlay.show()
+
+func _show_error(text: String) -> void:
+	message.text = text
+	if overlay.visible and is_instance_valid(overlay_notice):
+		overlay_notice.text = text
+		overlay_notice.show()
 
 func _scroll_list() -> VBoxContainer:
 	var scroll := ScrollContainer.new()
@@ -216,15 +260,26 @@ func _prepare_game(name_text: String) -> String:
 			return ""
 	return ProjectSettings.globalize_path(directory)
 
-func _start(name_text: String) -> void:
+func _start(name_text: String, allow_new_version := false) -> void:
 	var regex := RegEx.new()
 	regex.compile("^[A-Za-z][A-Za-z0-9_]{0,23}$")
 	if regex.search(name_text) == null:
-		message.text = "Use 1–24 letters, digits or underscores; start with a letter."
+		_show_error("Use 1–24 letters, digits or underscores; start with a letter.")
 		return
+	if not allow_new_version and DirAccess.dir_exists_absolute("user://games") and not DirAccess.dir_exists_absolute("user://games/%s/%s" % [save_namespace, name_text]):
+		for namespace: String in DirAccess.get_directories_at("user://games"):
+			if namespace != save_namespace and DirAccess.dir_exists_absolute("user://games/%s/%s" % [namespace, name_text]):
+				_clear_overlay("An older character is preserved")
+				var explanation := Label.new()
+				explanation.text = "This character has data from another engine version. Keep using its matching app version to finish that game. Starting here creates a separate game; your older files stay untouched."
+				explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				overlay_box.add_child(explanation)
+				_button("Start a separate game", func(): _start(name_text, true), overlay_box)
+				_button("Back", _show_home, overlay_box)
+				return
 	var directory := _prepare_game(name_text)
 	if directory.is_empty():
-		message.text = "Could not install game data. Check available storage and try again."
+		_show_error("Could not install game data. Check available storage and try again.")
 		return
 	current_name = name_text
 	settings.set_value("game", "last_name", current_name)
@@ -232,6 +287,7 @@ func _start(name_text: String) -> void:
 	map.clear_map()
 	status_fields.clear()
 	windows.clear()
+	window_types.clear()
 	menus.clear()
 	commands.clear()
 	active_prompt.clear()
@@ -239,7 +295,7 @@ func _start(name_text: String) -> void:
 		overlay.hide()
 		message.text = "Entering the dungeon…"
 	else:
-		message.text = "The native engine could not start."
+		_show_error("The native engine could not start.")
 
 func _process(_delta: float) -> void:
 	if session == null:
@@ -282,12 +338,16 @@ func _handle_event(e: Dictionary) -> void:
 				message.text = "\n".join(history.slice(maxi(0, history.size() - 3)))
 		2:
 			windows[v[0]] = []
+			window_types[v[0]] = v[1]
 		3:
 			windows[v[0]] = []
-			if int(v[0]) == 3:
+			if int(window_types.get(v[0], 0)) == 3:
 				map.clear_map()
 		4:
 			windows.erase(v[0])
+			window_types.erase(v[0])
+			menus.erase(v[0])
+			titles.erase(v[0])
 		5:
 			map.update_cell(v)
 		6:
@@ -566,6 +626,7 @@ func _show_settings() -> void:
 	_button("Larger text", func(): _change_scale(0.1), overlay_box)
 	_button("Smaller text", func(): _change_scale(-0.1), overlay_box)
 	_button("Help, credits & licenses", _show_about, overlay_box)
+	_button("Third-party license texts", _show_licenses, overlay_box)
 	if session != null and session.is_running():
 		_button("Save and suspend", _suspend_game, overlay_box)
 	_button("Back", _return_to_game, overlay_box)
@@ -599,6 +660,16 @@ func _customize_actions() -> void:
 
 func _show_about() -> void:
 	_show_text("NetHack Mobile 0.1.0 · NetHack %s\n\nUnofficial Android port. Free, offline, and open source.\n\nTap a known destination to use NetHack travel. Adjacent taps use the game's movement and interactions. Stop cancels travel. Drag to pan, pinch to zoom, Center to follow your character.\n\nUse Commands for all game actions, Direction for precise movement or targeting, and Keys for prefixes, modifiers and unusual inputs. A quantity of 0 in item menus means the whole stack.\n\nGames save automatically at safe input boundaries for crash recovery. Use Save and suspend before leaving. Death follows standard NetHack rules.\n\nSource and release archives:\n%s\n\nGodot and godot-cpp: MIT. Lua: MIT. Upstream tiles retain their notices.\n\n%s\n\n%s" % [engine_version, SOURCE_URL, FileAccess.get_file_as_string("res://data/NOTICE"), FileAccess.get_file_as_string("res://data/LICENSE")])
+	_button("Open source releases", func(): OS.shell_open(SOURCE_URL + "/releases"), overlay_box)
+
+func _show_licenses() -> void:
+	var texts: Array[String] = [Engine.get_license_text(), FileAccess.get_file_as_string("res://data/GODOT_LICENSE"), FileAccess.get_file_as_string("res://data/LUA_LICENSE")]
+	for component: Dictionary in Engine.get_copyright_info():
+		texts.append(JSON.stringify(component, "  "))
+	var licenses := Engine.get_license_info()
+	for name in licenses:
+		texts.append(String(name) + "\n" + String(licenses[name]))
+	_show_text("\n\n".join(texts))
 
 func _suspend_game() -> void:
 	if session != null and session.is_running():

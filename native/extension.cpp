@@ -20,6 +20,7 @@ protected:
         ClassDB::bind_method(D_METHOD("interrupt"), &NetHackSession::interrupt);
         ClassDB::bind_method(D_METHOD("stop"), &NetHackSession::stop);
         ClassDB::bind_method(D_METHOD("is_running"), &NetHackSession::is_running);
+        ClassDB::bind_method(D_METHOD("source_revision"), &NetHackSession::source_revision);
     }
 public:
     bool start(const String &directory, const String &name) { return nm_start(directory.utf8().get_data(), name.utf8().get_data()) != 0; }
@@ -49,6 +50,7 @@ public:
     void interrupt() { nm_interrupt(); }
     void stop() { nm_stop(); }
     bool is_running() { return nm_running() != 0; }
+    String source_revision() { return String("nethack-mobile-source:" NM_SOURCE_REVISION); }
     ~NetHackSession() { nm_stop(); }
 };
 

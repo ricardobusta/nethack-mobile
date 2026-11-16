@@ -9,6 +9,10 @@ import zlib
 
 def convert(source, output):
     tiles = []
+    statues = []
+    mapping_text = re.search(r'static const int graymappings\[\]\s*=\s*\{(.*?)\};', (source / 'tiletext.c').read_text(), re.S).group(1)
+    mapping_text = re.sub(r'/\*.*?\*/', '', mapping_text, flags=re.S)
+    grayscale = [int(value) for value in mapping_text.split(',') if value.strip()]
     for name in ('monsters.txt', 'objects.txt', 'other.txt'):
         palette = {}
         rows = None
@@ -22,9 +26,14 @@ def convert(source, output):
                 if len(rows) != 16 or any(len(row) != 16 for row in rows):
                     raise ValueError('Unexpected tile size')
                 tiles.append(b''.join(palette[c] for row in rows for c in row))
+                if name == 'monsters.txt':
+                    keys = list(palette)
+                    mapped = {key: palette[keys[grayscale[i]]] if i < len(grayscale) else palette[key] for i, key in enumerate(keys)}
+                    statues.append(b''.join(mapped[c] for row in rows for c in row))
                 rows = None
             elif rows is not None:
                 rows.append(line.strip())
+    tiles.extend(statues)
     columns = 40
     width, height = columns * 16, ((len(tiles) + columns - 1) // columns) * 16
     pixels = bytearray(width * height * 3)
@@ -38,6 +47,7 @@ def convert(source, output):
     raw = b''.join(b'\0' + pixels[row * width * 3:(row + 1) * width * 3] for row in range(height))
     output.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
     print(f'Generated {len(tiles)} upstream tiles: {width}x{height}')
+    return len(tiles)
 
 
 if __name__ == '__main__':

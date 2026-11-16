@@ -5,6 +5,7 @@ dist/
 godot/.godot/
 godot/bin/
 godot/data/
+godot/android/
 *.pyc
 __pycache__/
 *.keystore

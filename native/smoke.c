@@ -4,9 +4,10 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+extern int total_tiles_used;
 
 int main(int argc, char **argv) {
-    if (argc != 2) return 2;
+    if (argc < 2 || argc > 3) return 2;
     int first[256], commands = 0, maps = 0, restored = 0, ended = 0, tile_types = 0, tiles[4096] = {0};
     for (int i = 0; i < 256; ++i) first[i] = -1;
     if (!nm_start(argv[1], "MobileTest")) return 3;
@@ -14,24 +15,28 @@ int main(int argc, char **argv) {
     while (time(NULL) < deadline) {
         nm_event e;
         if (!nm_poll(&e)) { usleep(1000); continue; }
-        if (e.type == NM_MESSAGE) fprintf(stderr, "engine: %s\n", e.text);
+        if (e.type == NM_MESSAGE && (strstr(e.text, "error") || strstr(e.text, "Cannot") || strstr(e.text, "Program in disorder"))) fprintf(stderr, "engine: %s\n", e.text);
         if (e.type == NM_GLYPH) {
             ++maps;
-            if (e.values[4] < 0 || e.values[4] >= 1515) { fprintf(stderr, "Invalid tile mapping\n"); nm_stop(); return 9; }
+            if (e.values[4] < 0 || e.values[4] >= total_tiles_used || e.values[4] >= 4096) { fprintf(stderr, "Invalid tile mapping\n"); nm_stop(); return 9; }
             if (!tiles[e.values[4]]) { tiles[e.values[4]] = 1; ++tile_types; }
         }
         if (e.type == NM_MENU_START) first[e.values[0]] = -1;
-        if (e.type == NM_MENU_ITEM && e.values[3] && first[e.values[0]] < 0) first[e.values[0]] = e.values[1];
+        if (e.type == NM_MENU_ITEM && e.values[3] && (first[e.values[0]] < 0 || strstr(e.text, "No, just start play"))) first[e.values[0]] = e.values[1];
         if (e.type == NM_PROMPT) {
             nm_input input = {0}; input.request = e.request; input.type = NM_KEY; input.key = ' ';
             switch (e.values[0]) {
             case 0:
                 ++commands;
-                if (commands == 1) input.key = 'i';
-                else if (commands == 2) input.key = '#';
-                else if (commands == 3) input.key = 's';
-                else if (commands == 4) { nm_suspend(); continue; }
-                else if (commands == 5) input.key = 's';
+                if (argc == 3 && commands == 3) {
+                    puts("CHECKPOINT_READY"); fflush(stdout);
+                    for (;;) pause();
+                }
+                if (commands <= 260) input.key = 'i';
+                else if (commands == 261) input.key = '#';
+                else if (commands == 262) input.key = 's';
+                else if (commands == 263) { nm_suspend(); continue; }
+                else if (commands == 264) input.key = 's';
                 else { input.key = '#'; }
                 break;
             case 2:
@@ -46,7 +51,7 @@ int main(int argc, char **argv) {
                 break;
             case 5:
                 input.type = NM_EXTENDED;
-                snprintf(input.text, sizeof input.text, "%s", commands >= 6 ? "quit" : "version");
+                snprintf(input.text, sizeof input.text, "%s", commands >= 265 ? "quit" : "version");
                 break;
             case 6: input.key = 27; break;
             }
@@ -61,7 +66,7 @@ int main(int argc, char **argv) {
                 if (!nm_start(argv[1], "MobileTest")) return 6;
             } else {
                 nm_stop();
-                int success = maps > 100 && commands >= 6 && tile_types >= 5;
+                int success = maps > 100 && commands >= 265 && tile_types >= 5;
                 printf("Native smoke: %d map events, %d command boundaries, %d sessions; %s.\n", maps, commands, ended, success ? "passed" : "FAILED");
                 return success ? 0 : 7;
             }

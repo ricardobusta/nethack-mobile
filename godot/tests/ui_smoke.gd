@@ -13,17 +13,22 @@ func run() -> void:
 	app = load("res://main.tscn").instantiate()
 	root.add_child(app)
 	await process_frame
-	app._start("UITest")
+	app._start("UITest", true)
+	print("UI test started")
 	deadline = Time.get_ticks_msec() + 60000
 	while Time.get_ticks_msec() < deadline:
 		await process_frame
 		if app.active_prompt.is_empty():
+			if not app.session.is_running():
+				fail("Engine stopped: " + "\n".join(app.history))
+				return
 			continue
 		var prompt: Dictionary = app.active_prompt
 		if int(prompt.request) == handled:
 			continue
 		handled = int(prompt.request)
 		var kind := int(prompt.v[0])
+		print("UI prompt ", handled, " kind ", kind, " ", prompt.text)
 		match kind:
 			0:
 				boundaries += 1
@@ -39,6 +44,18 @@ func run() -> void:
 						return
 					app._toggle_mode()
 					app._toggle_mode()
+					var original_size := root.size
+					root.size = Vector2i(960, 540)
+					await process_frame
+					await process_frame
+					if app.body.vertical or app.map.size.y < 200:
+						fail("Landscape did not reflow into a usable map layout")
+						return
+					if OS.get_cmdline_user_args().has("--screenshot"):
+						await RenderingServer.frame_post_draw
+						root.get_texture().get_image().save_png("res://../build/ui-landscape.png")
+					root.size = original_size
+					await process_frame
 					app._show_directions()
 					app._return_to_game()
 					app._send_key(105)

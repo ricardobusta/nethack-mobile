@@ -7,10 +7,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import tarfile
 import tempfile
 import urllib.request
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[1]
 API = 'https://api.github.com/repos/NetHack/NetHack'
@@ -20,14 +22,19 @@ def fetch(url):
     headers = {'User-Agent': 'nethack-mobile-updater', 'Accept': 'application/vnd.github+json'}
     if os.environ.get('GITHUB_TOKEN') and url.startswith(API + '/'):
         headers['Authorization'] = 'Bearer ' + os.environ['GITHUB_TOKEN']
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as response:
+    context = ssl.create_default_context()
+    # python.org's macOS installer may not have its optional CA bundle installed.
+    # Use the OS bundle when the interpreter has no trusted roots; never disable TLS verification.
+    if not context.get_ca_certs() and Path('/etc/ssl/cert.pem').is_file():
+        context.load_verify_locations('/etc/ssl/cert.pem')
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60, context=context) as response:
         return response.read()
 
 
 def tree_hash(root):
     h = hashlib.sha256()
     for path in sorted(root.rglob('*')):
-        if path.is_file():
+        if path.is_file() and '__pycache__' not in path.relative_to(root).parts:
             h.update(path.relative_to(root).as_posix().encode() + b'\0')
             h.update(path.read_bytes())
     return h.hexdigest()
