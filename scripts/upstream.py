@@ -34,7 +34,7 @@ def fetch(url):
 def tree_hash(root):
     h = hashlib.sha256()
     for path in sorted(root.rglob('*')):
-        if path.is_file() and '__pycache__' not in path.relative_to(root).parts:
+        if path.is_file() and '__pycache__' not in path.relative_to(root).parts and path.name != '.DS_Store':
             h.update(path.relative_to(root).as_posix().encode() + b'\0')
             h.update(path.read_bytes())
     return h.hexdigest()

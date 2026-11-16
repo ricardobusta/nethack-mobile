@@ -267,8 +267,8 @@ func _start(name_text: String, allow_new_version := false) -> void:
 		_show_error("Use 1–24 letters, digits or underscores; start with a letter.")
 		return
 	if not allow_new_version and DirAccess.dir_exists_absolute("user://games") and not DirAccess.dir_exists_absolute("user://games/%s/%s" % [save_namespace, name_text]):
-		for namespace: String in DirAccess.get_directories_at("user://games"):
-			if namespace != save_namespace and DirAccess.dir_exists_absolute("user://games/%s/%s" % [namespace, name_text]):
+		for saved_version: String in DirAccess.get_directories_at("user://games"):
+			if saved_version != save_namespace and DirAccess.dir_exists_absolute("user://games/%s/%s" % [saved_version, name_text]):
 				_clear_overlay("An older character is preserved")
 				var explanation := Label.new()
 				explanation.text = "This character has data from another engine version. Keep using its matching app version to finish that game. Starting here creates a separate game; your older files stay untouched."

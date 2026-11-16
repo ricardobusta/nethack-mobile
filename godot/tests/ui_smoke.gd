@@ -11,6 +11,10 @@ func _initialize() -> void:
 
 func run() -> void:
 	app = load("res://main.tscn").instantiate()
+	if not app.has_method("_start"):
+		push_error("Main UI script could not load")
+		quit(1)
+		return
 	root.add_child(app)
 	await process_frame
 	app._start("UITest", true)
