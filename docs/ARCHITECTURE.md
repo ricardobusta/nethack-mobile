@@ -50,6 +50,10 @@ build gets its own temporary source, generated data, and native test directory.
 Failed validation leaves the vendored source, lock, and current generated app
 data intact. Import does not change application version numbers or publish.
 
+Bundled support files carry a content digest. On an app update, the installer
+refreshes those files atomically before starting the engine; saves, bones,
+scores, and other runtime files are outside the bundle manifest and remain intact.
+
 Save storage is namespaced as `engine-version-edit-level-mobile1`. Any port
 change affecting save layout must increment `mobile1`. Older namespaces remain
 on disk; automatic migration or loading with a different engine is unsupported.

@@ -17,6 +17,8 @@ func run() -> void:
 		return
 	root.add_child(app)
 	await process_frame
+	if not verify_asset_refresh():
+		return
 	app._start("UITest", true)
 	print("UI test started")
 	deadline = Time.get_ticks_msec() + 60000
@@ -105,3 +107,31 @@ func fail(reason: String) -> void:
 	push_error(reason)
 	app.session.stop()
 	quit(1)
+
+func verify_asset_refresh() -> bool:
+	var name := "AssetCheck" + str(Time.get_ticks_usec())
+	var directory: String = app._prepare_game(name)
+	if directory.is_empty():
+		fail("Initial asset installation failed")
+		return false
+	var sentinel := directory.path_join("save/keep-state")
+	var saved := FileAccess.open(sentinel, FileAccess.WRITE)
+	saved.store_string("saved game must survive an asset refresh")
+	saved.close()
+	var old_data := FileAccess.open(directory.path_join("nhdat"), FileAccess.WRITE)
+	old_data.store_string("old bundled data")
+	old_data.close()
+	var old_marker := FileAccess.open(directory.path_join(".assets_revision"), FileAccess.WRITE)
+	old_marker.store_string("previous asset version")
+	old_marker.close()
+	if app._prepare_game(name).is_empty() or FileAccess.get_file_as_bytes(directory.path_join("nhdat")) != FileAccess.get_file_as_bytes("res://data/nhdat") or FileAccess.get_file_as_string(sentinel) != "saved game must survive an asset refresh":
+		fail("Asset refresh failed or overwrote a save")
+		return false
+	DirAccess.remove_absolute(sentinel)
+	DirAccess.remove_absolute(directory.path_join("save"))
+	for filename in DirAccess.get_files_at(directory):
+		DirAccess.remove_absolute(directory.path_join(filename))
+	DirAccess.remove_absolute(directory.path_join(".assets_revision"))
+	DirAccess.remove_absolute(directory)
+	print("Bundled-data upgrade preserved saved-game files.")
+	return true

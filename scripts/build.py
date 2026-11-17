@@ -2,6 +2,7 @@
 """Reproducible host tools, native engine, and Android builds."""
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -78,6 +79,12 @@ def prepare(source, workspace, data):
         raise RuntimeError(f'Incomplete tileset: {tile_count} tiles for {expected_tiles} mapped tiles')
     info = json.loads((data / 'build.json').read_text())
     info['tile_count'] = tile_count
+    assets = hashlib.sha256()
+    for file in sorted(data.iterdir()):
+        if file.is_file() and file.name != 'build.json':
+            assets.update(file.name.encode() + b'\0')
+            assets.update(file.read_bytes())
+    info['assets_sha256'] = assets.hexdigest()
     (data / 'build.json').write_text(json.dumps(info, indent=2))
     (data / 'files.json').write_text(json.dumps(sorted(p.name for p in data.iterdir() if p.is_file() and p.name != 'files.json')))
     return work

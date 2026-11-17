@@ -4,6 +4,7 @@ const MapView = preload("res://scripts/map_view.gd")
 const SOURCE_URL := "https://github.com/ricardobusta/nethack-mobile"
 var engine_version := "5.0.0"
 var save_namespace := "5.0.0-0-mobile1"
+var asset_revision := "unversioned"
 const ACTIONS := {"Inventory": "i", "Search": "s", "Wait": ".", "Pick up": ",", "Down": ">", "Up": "<", "Open": "o", "Kick": "\u0004", "Eat": "e", "Drink": "q", "Read": "r", "Apply": "a", "Cast": "Z", "Fire": "f", "Throw": "t", "Zap": "z", "Look": ":", "Look far": ";", "Save": "S"}
 var session: RefCounted
 var map: Control
@@ -46,6 +47,7 @@ func _ready() -> void:
 	if build_info is Dictionary:
 		engine_version = String(build_info.get("engine_version", engine_version))
 		save_namespace = String(build_info.get("save_namespace", save_namespace))
+		asset_revision = String(build_info.get("assets_sha256", build_info.get("source_revision", asset_revision)))
 	settings.load("user://settings.cfg")
 	actions = settings.get_value("ui", "actions", actions)
 	ui_scale = float(settings.get_value("ui", "scale", 1.0))
@@ -245,10 +247,13 @@ func _prepare_game(name_text: String) -> String:
 	var file_list = JSON.parse_string(FileAccess.get_file_as_string("res://data/files.json"))
 	if not file_list is Array:
 		return ""
+	var marker := directory.path_join(".assets_revision")
+	var refresh := not FileAccess.file_exists(marker) or FileAccess.get_file_as_string(marker) != asset_revision
 	for filename: String in file_list:
-		# Game data is installed atomically; saves, bones and scores are never replaced.
+		# Refresh only bundled support files; runtime saves, bones and scores
+		# are absent from the bundle manifest and are never replaced.
 		var destination := directory.path_join(filename)
-		if FileAccess.file_exists(destination):
+		if FileAccess.file_exists(destination) and not refresh and filename != "build.json":
 			continue
 		var bytes := FileAccess.get_file_as_bytes("res://data/" + filename)
 		var file := FileAccess.open(destination + ".tmp", FileAccess.WRITE)
@@ -259,6 +264,14 @@ func _prepare_game(name_text: String) -> String:
 		file.close()
 		if DirAccess.rename_absolute(destination + ".tmp", destination) != OK:
 			return ""
+	var installed := FileAccess.open(marker + ".tmp", FileAccess.WRITE)
+	if installed == null:
+		return ""
+	installed.store_string(asset_revision)
+	installed.flush()
+	installed.close()
+	if DirAccess.rename_absolute(marker + ".tmp", marker) != OK:
+		return ""
 	return ProjectSettings.globalize_path(directory)
 
 func _start(name_text: String, allow_new_version := false) -> void:
