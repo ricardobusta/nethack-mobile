@@ -45,7 +45,9 @@ if __name__ == '__main__':
         expected = {'nethack': json.loads((ROOT / 'upstream.lock.json').read_text())['tree_sha256']}
         expected.update({name: dep['tree_sha256'] for name, dep in json.loads((ROOT / 'dependencies.lock.json').read_text()).items()})
         with tarfile.open(fileobj=source, mode='r:') as snapshot:
-            members = sorted((m for m in snapshot.getmembers() if m.isfile()), key=lambda m: m.name)
+            # Match pathlib's component ordering used by upstream.tree_hash,
+            # including directories whose names precede similarly named files.
+            members = sorted((m for m in snapshot.getmembers() if m.isfile()), key=lambda m: Path(m.name))
             for name, checksum in expected.items():
                 prefix = 'nethack-mobile/vendor/' + name + '/'
                 digest = hashlib.sha256()

@@ -17,6 +17,13 @@ managed by another game engine.
 5. Run `python3 scripts/package_release.py` to create the matching complete
    source archive, `release.json`, and `SHA256SUMS` in `dist`.
 
+Generate the 512 px listing icon and 1024×500 feature graphic from the original
+vector branding with `godot --path godot --script res://tests/store_assets.gd`.
+They are written to `dist/store`; review them with the owner before publication.
+Capture phone/tablet screenshots from the actual release build. Google's current
+[preview-asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
+remain the final authority for listing dimensions and formats.
+
 The source packager rejects uncommitted state, stale generated metadata, or an
 APK built from different metadata. Native libraries are stripped only in their
 shipping Android copies; host/build archives retain symbols for diagnosis.
