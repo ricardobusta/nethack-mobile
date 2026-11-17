@@ -12,6 +12,20 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def verify_notices(archive, directory):
+    required = {
+        'NETHACK_LICENSE': ROOT / 'LICENSE',
+        'ANDROID_CPP_LICENSES': ROOT / 'third_party/ANDROID_CPP_LICENSES.txt',
+        'GODOT_LICENSE': ROOT / 'vendor/godot-cpp/LICENSE.md',
+        'LUA_LICENSE': ROOT / 'godot/data/LUA_LICENSE',
+        'NOTICE': ROOT / 'NOTICE',
+    }
+    for name, source in required.items():
+        path = directory + name
+        if path not in archive.namelist() or archive.read(path) != source.read_bytes():
+            raise SystemExit('Missing or incorrect bundled notice: ' + path)
+
 if __name__ == '__main__':
     if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip():
         raise SystemExit('Commit the milestone before creating its matching source release.')
@@ -23,6 +37,7 @@ if __name__ == '__main__':
     apk = dist / 'nethack-mobile-debug.apk'
     if apk.exists():
         with zipfile.ZipFile(apk) as archive:
+            verify_notices(archive, 'assets/data/')
             embedded = json.loads(archive.read('assets/data/build.json'))
             if embedded != info:
                 raise SystemExit('APK metadata differs from the current build; export it again.')
@@ -35,6 +50,7 @@ if __name__ == '__main__':
             candidates = [p for p in archive.namelist() if p.endswith('/assets/data/build.json')]
             if not candidates or json.loads(archive.read(candidates[0])) != info:
                 raise SystemExit('AAB metadata differs from the current build; export it again.')
+            verify_notices(archive, candidates[0].removesuffix('build.json'))
             for name in archive.namelist():
                 if name.endswith('/libnethack_mobile.so') and ('nethack-mobile-source:' + revision).encode() not in archive.read(name):
                     raise SystemExit('AAB native bridge is stale; rebuild both ABIs before packaging.')

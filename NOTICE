@@ -7,6 +7,8 @@ NetHack: https://github.com/NetHack/NetHack
 Godot Engine: MIT license; see https://godotengine.org/license/
 godot-cpp: MIT license; see vendor/godot-cpp/LICENSE.md
 Lua 5.4.8: MIT license; see vendor/lua/doc/readme.html
+Android C++ runtime: see third_party/ANDROID_CPP_LICENSES.txt for LLVM,
+libc++ and libc++abi license texts and legacy MIT/BSD notices.
 
 Upstream standard tile artwork is included under its original notices.
 Every distributed build must include these notices and its matching source.

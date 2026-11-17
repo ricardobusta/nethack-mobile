@@ -63,7 +63,8 @@ def prepare(source, workspace, data):
     version = '.'.join(versions[:3])
     revision = (ROOT / 'SOURCE_REVISION').read_text().strip() if (ROOT / 'SOURCE_REVISION').exists() else subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip() if (ROOT / '.git').exists() else 'unversioned'
     (data / 'build.json').write_text(json.dumps({'engine_version': version, 'save_namespace': version + '-' + versions[3] + '-mobile1', 'port_version': '0.1.0', 'source_revision': revision}, indent=2))
-    for name, path in [('LICENSE', ROOT / 'LICENSE'), ('NOTICE', ROOT / 'NOTICE'),
+    for name, path in [('NETHACK_LICENSE', ROOT / 'LICENSE'), ('NOTICE', ROOT / 'NOTICE'),
+                       ('ANDROID_CPP_LICENSES', ROOT / 'third_party/ANDROID_CPP_LICENSES.txt'),
                        ('GODOT_LICENSE', ROOT / 'vendor/godot-cpp/LICENSE.md'),
                        ('LUA_README.html', ROOT / 'vendor/lua/doc/readme.html')]:
         shutil.copy2(path, data / name)

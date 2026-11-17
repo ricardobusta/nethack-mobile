@@ -660,11 +660,11 @@ func _customize_actions() -> void:
 	_button("Done", _show_settings, overlay_box)
 
 func _show_about() -> void:
-	_show_text("NetHack Mobile 0.1.0 · NetHack %s\n\nUnofficial Android port. Free, offline, and open source.\n\nTap a known destination to use NetHack travel. Adjacent taps use the game's movement and interactions. Stop cancels travel. Drag to pan, pinch to zoom, Center to follow your character.\n\nUse Commands for all game actions, Direction for precise movement or targeting, and Keys for prefixes, modifiers and unusual inputs. A quantity of 0 in item menus means the whole stack.\n\nGames save automatically at safe input boundaries for crash recovery. Use Save and suspend before leaving. Death follows standard NetHack rules.\n\nSource and release archives:\n%s\n\nGodot and godot-cpp: MIT. Lua: MIT. Upstream tiles retain their notices.\n\n%s\n\n%s" % [engine_version, SOURCE_URL, FileAccess.get_file_as_string("res://data/NOTICE"), FileAccess.get_file_as_string("res://data/LICENSE")])
+	_show_text("NetHack Mobile 0.1.0 · NetHack %s\n\nUnofficial Android port. Free, offline, and open source.\n\nTap a known destination to use NetHack travel. Adjacent taps use the game's movement and interactions. Stop cancels travel. Drag to pan, pinch to zoom, Center to follow your character.\n\nUse Commands for all game actions, Direction for precise movement or targeting, and Keys for prefixes, modifiers and unusual inputs. A quantity of 0 in item menus means the whole stack.\n\nGames save automatically at safe input boundaries for crash recovery. Use Save and suspend before leaving. Death follows standard NetHack rules.\n\nSource and release archives:\n%s\n\nGodot and godot-cpp: MIT. Lua: MIT. Upstream tiles retain their notices.\n\n%s\n\n%s" % [engine_version, SOURCE_URL, FileAccess.get_file_as_string("res://data/NOTICE"), FileAccess.get_file_as_string("res://data/NETHACK_LICENSE")])
 	_button("Open source releases", func(): OS.shell_open(SOURCE_URL + "/releases"), overlay_box)
 
 func _show_licenses() -> void:
-	var texts: Array[String] = [Engine.get_license_text(), FileAccess.get_file_as_string("res://data/GODOT_LICENSE"), FileAccess.get_file_as_string("res://data/LUA_LICENSE")]
+	var texts: Array[String] = [Engine.get_license_text(), FileAccess.get_file_as_string("res://data/GODOT_LICENSE"), FileAccess.get_file_as_string("res://data/LUA_LICENSE"), FileAccess.get_file_as_string("res://data/ANDROID_CPP_LICENSES")]
 	for component: Dictionary in Engine.get_copyright_info():
 		texts.append(JSON.stringify(component, "  "))
 	var licenses := Engine.get_license_info()
