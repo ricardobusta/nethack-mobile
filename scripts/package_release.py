@@ -26,6 +26,12 @@ def verify_notices(archive, directory):
         if path not in archive.namelist() or archive.read(path) != source.read_bytes():
             raise SystemExit('Missing or incorrect bundled notice: ' + path)
 
+
+def verify_assets(archive, directory):
+    for name in json.loads(archive.read(directory + 'files.json')):
+        if directory + name not in archive.namelist():
+            raise SystemExit('Bundled data manifest references missing asset: ' + name)
+
 if __name__ == '__main__':
     if subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip():
         raise SystemExit('Commit the milestone before creating its matching source release.')
@@ -38,6 +44,7 @@ if __name__ == '__main__':
     if apk.exists():
         with zipfile.ZipFile(apk) as archive:
             verify_notices(archive, 'assets/data/')
+            verify_assets(archive, 'assets/data/')
             embedded = json.loads(archive.read('assets/data/build.json'))
             if embedded != info:
                 raise SystemExit('APK metadata differs from the current build; export it again.')
@@ -51,6 +58,7 @@ if __name__ == '__main__':
             if not candidates or json.loads(archive.read(candidates[0])) != info:
                 raise SystemExit('AAB metadata differs from the current build; export it again.')
             verify_notices(archive, candidates[0].removesuffix('build.json'))
+            verify_assets(archive, candidates[0].removesuffix('build.json'))
             for name in archive.namelist():
                 if name.endswith('/libnethack_mobile.so') and ('nethack-mobile-source:' + revision).encode() not in archive.read(name):
                     raise SystemExit('AAB native bridge is stale; rebuild both ABIs before packaging.')

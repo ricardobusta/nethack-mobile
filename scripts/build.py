@@ -41,10 +41,10 @@ def prepare(source, workspace, data):
     data.mkdir(parents=True, exist_ok=True)
     # DLB also supports loose data files. Ship them all to avoid a platform-specific archive.
     for p in (work / 'dat').iterdir():
-        if p.is_file():
+        if p.is_file() and not p.name.startswith('.'):
             shutil.copy2(p, data / p.name)
     # Revision-1 DLB format, as documented in upstream src/dlb.c.
-    files = sorted(p for p in (work / 'dat').iterdir() if p.is_file() and p.name != 'nhdat')
+    files = sorted(p for p in (work / 'dat').iterdir() if p.is_file() and p.name != 'nhdat' and not p.name.startswith('.'))
     names = ['__directory__'] + [p.name for p in files]
     directory_size = 40 + sum(11 + len(name) for name in names)
     offset = directory_size
@@ -86,7 +86,9 @@ def prepare(source, workspace, data):
             assets.update(file.read_bytes())
     info['assets_sha256'] = assets.hexdigest()
     (data / 'build.json').write_text(json.dumps(info, indent=2))
-    (data / 'files.json').write_text(json.dumps(sorted(p.name for p in data.iterdir() if p.is_file() and p.name != 'files.json')))
+    # Godot imports the atlas as a texture; only engine-readable loose files
+    # belong in the private game directory's installation manifest.
+    (data / 'files.json').write_text(json.dumps(sorted(p.name for p in data.iterdir() if p.is_file() and p.name not in ('files.json', 'tiles.png'))))
     return work
 
 
