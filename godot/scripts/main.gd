@@ -229,7 +229,7 @@ func _show_home() -> void:
 	name_field.placeholder_text = "Character name"
 	name_field.text = settings.get_value("game", "last_name", "Adventurer")
 	name_field.max_length = 24
-	name_field.custom_minimum_size.y = 72
+	name_field.custom_minimum_size.y = _touch_size()
 	overlay_box.add_child(name_field)
 	var start_button := _button("Start / resume character", func(): _start(name_field.text), overlay_box)
 	start_button.disabled = session == null
@@ -439,7 +439,7 @@ func _show_prompt() -> void:
 		3:
 			_clear_overlay(String(active_prompt.text))
 			var line := LineEdit.new()
-			line.custom_minimum_size.y = 72
+			line.custom_minimum_size.y = _touch_size()
 			line.max_length = 255
 			overlay_box.add_child(line)
 			line.text_submitted.connect(func(text): _reply({"type": 3, "text": text}))
@@ -472,7 +472,7 @@ func _show_menu() -> void:
 	_clear_overlay(String(titles.get(w, "Choose")))
 	search = LineEdit.new()
 	search.placeholder_text = "Filter items…"
-	search.custom_minimum_size.y = 72
+	search.custom_minimum_size.y = _touch_size()
 	overlay_box.add_child(search)
 	menu_list = _scroll_list()
 	for entry: Dictionary in menus.get(w, []):
@@ -492,7 +492,7 @@ func _show_menu() -> void:
 		else:
 			var check := CheckButton.new()
 			check.text = entry.text
-			check.custom_minimum_size.y = 72
+			check.custom_minimum_size.y = _touch_size()
 			check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			row.add_child(check)
@@ -500,7 +500,7 @@ func _show_menu() -> void:
 			quantity.min_value = 0
 			quantity.max_value = 1000000
 			quantity.value = 0
-			quantity.custom_minimum_size = Vector2(140, 72)
+			quantity.custom_minimum_size = Vector2(140, _touch_size())
 			quantity.tooltip_text = "0 means the entire stack"
 			row.add_child(quantity)
 			check.toggled.connect(func(on):
@@ -537,7 +537,7 @@ func _show_commands() -> void:
 	_clear_overlay("All game commands")
 	search = LineEdit.new()
 	search.placeholder_text = "Search commands…"
-	search.custom_minimum_size.y = 72
+	search.custom_minimum_size.y = _touch_size()
 	overlay_box.add_child(search)
 	menu_list = _scroll_list()
 	for command: Dictionary in commands:
@@ -576,18 +576,18 @@ func _show_keyboard() -> void:
 	_button("Directions", _show_directions, modifiers)
 	key_entry = LineEdit.new()
 	key_entry.placeholder_text = "Type a key (or use buttons below)"
-	key_entry.custom_minimum_size.y = 72
+	key_entry.custom_minimum_size.y = _touch_size()
 	overlay_box.add_child(key_entry)
 	key_entry.text_changed.connect(func(text):
 		if not text.is_empty():
 			_keyboard_key(text.unicode_at(0)))
 	var list := _scroll_list()
 	for letters in ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM", "<>.,:;!?@#", "$%^&*()-_=+", "[]{}\\|/\"'`~"]:
-		var row := HBoxContainer.new()
+		var row := HFlowContainer.new()
 		list.add_child(row)
 		for c in letters:
 			var b := _button(c, func(): _keyboard_key(c.unicode_at(0)), row, true)
-			b.custom_minimum_size.x = 0
+			b.custom_minimum_size.x = _touch_size()
 	var controls := HBoxContainer.new()
 	overlay_box.add_child(controls)
 	_button("Esc", func(): _send_key(27), controls)
@@ -644,7 +644,7 @@ func _customize_actions() -> void:
 	for action in ACTIONS:
 		var check := CheckButton.new()
 		check.text = action
-		check.custom_minimum_size.y = 72
+		check.custom_minimum_size.y = _touch_size()
 		check.button_pressed = action in actions
 		list.add_child(check)
 		check.toggled.connect(func(on):
