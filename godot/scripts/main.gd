@@ -12,6 +12,7 @@ var page: VBoxContainer
 var header: HBoxContainer
 var body: BoxContainer
 var info_column: VBoxContainer
+var info_scroll: ScrollContainer
 var status: Label
 var message: Label
 var hint: Label
@@ -98,9 +99,13 @@ func _build_ui() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 14)
 	page.add_child(body)
+	info_scroll = ScrollContainer.new()
+	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	info_scroll.follow_focus = true
+	body.add_child(info_scroll)
 	info_column = VBoxContainer.new()
 	info_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_child(info_column)
+	info_scroll.add_child(info_column)
 	status = Label.new()
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status.text = "NetHack %s · Offline · NGPL" % engine_version
@@ -154,8 +159,9 @@ func _layout() -> void:
 	var viewport := get_viewport_rect().size
 	var landscape := viewport.x > viewport.y
 	body.vertical = not landscape
-	info_column.custom_minimum_size.x = clampf(viewport.x * 0.28, 280, 400) if landscape else 0
-	info_column.size_flags_horizontal = Control.SIZE_FILL if landscape else Control.SIZE_EXPAND_FILL
+	info_scroll.custom_minimum_size.x = clampf(viewport.x * 0.28, 280, 400) if landscape else 0
+	info_scroll.size_flags_horizontal = Control.SIZE_FILL if landscape else Control.SIZE_EXPAND_FILL
+	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL if landscape else Control.SIZE_FILL
 	var safe := DisplayServer.get_display_safe_area()
 	var screen := DisplayServer.screen_get_size()
 	var left := 12.0
@@ -181,6 +187,7 @@ func _layout() -> void:
 	overlay.offset_bottom = -bottom - 6
 	message.max_lines_visible = 2 if viewport.x > viewport.y else 3
 	message.custom_minimum_size.y = 48 if viewport.x > viewport.y else 86
+	info_scroll.custom_minimum_size.y = 0 if landscape else info_column.get_combined_minimum_size().y
 
 func _refresh_actions() -> void:
 	for child in action_bar.get_children():
@@ -213,6 +220,8 @@ func _show_error(text: String) -> void:
 
 func _scroll_list() -> VBoxContainer:
 	var scroll := ScrollContainer.new()
+	scroll.follow_focus = true
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	overlay_box.add_child(scroll)
@@ -223,21 +232,22 @@ func _scroll_list() -> VBoxContainer:
 
 func _show_home() -> void:
 	_clear_overlay("NetHack Mobile")
+	var content := _scroll_list()
 	var intro := Label.new()
 	intro.text = "The dungeon awaits.\n\nTap to travel, choose actions below, and discover every command through the command browser. Both ASCII and classic tiles are available."
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	overlay_box.add_child(intro)
+	content.add_child(intro)
 	var name_field := LineEdit.new()
 	name_field.placeholder_text = "Character name"
 	name_field.text = settings.get_value("game", "last_name", "Adventurer")
 	name_field.max_length = 24
 	name_field.custom_minimum_size.y = _touch_size()
-	overlay_box.add_child(name_field)
-	var start_button := _button("Start / resume character", func(): _start(name_field.text), overlay_box)
+	content.add_child(name_field)
+	var start_button := _button("Start / resume character", func(): _start(name_field.text), content)
 	start_button.disabled = session == null
 	if session == null:
 		intro.text += "\n\nNative engine unavailable. Run python3 scripts/build.py host before opening this project."
-	_button("Help & licenses", _show_about, overlay_box)
+	_button("Help & licenses", _show_about, content)
 
 func _prepare_game(name_text: String) -> String:
 	var directory := "user://games/%s/%s" % [save_namespace, name_text]
@@ -574,7 +584,7 @@ func _show_directions() -> void:
 	overlay_box.add_child(vertical)
 	_button("Up <", func(): _send_key(60), vertical)
 	_button("Down >", func(): _send_key(62), vertical)
-	_button("Cancel", _return_to_game, overlay_box)
+	_button("Cancel", _return_to_game, vertical)
 
 func _show_keyboard() -> void:
 	_clear_overlay(String(active_prompt.get("text", "NetHack keyboard")))
@@ -634,15 +644,16 @@ func _toggle_mode() -> void:
 
 func _show_settings() -> void:
 	_clear_overlay("Settings")
-	_button("Switch ASCII / tiles", _toggle_mode, overlay_box)
-	_button("Message history", func(): _show_text("\n".join(history)), overlay_box)
-	_button("Customize action bar", _customize_actions, overlay_box)
-	_button("Larger text", func(): _change_scale(0.1), overlay_box)
-	_button("Smaller text", func(): _change_scale(-0.1), overlay_box)
-	_button("Help, credits & licenses", _show_about, overlay_box)
-	_button("Third-party license texts", _show_licenses, overlay_box)
+	var options := _scroll_list()
+	_button("Switch ASCII / tiles", _toggle_mode, options)
+	_button("Message history", func(): _show_text("\n".join(history)), options)
+	_button("Customize action bar", _customize_actions, options)
+	_button("Larger text", func(): _change_scale(0.1), options)
+	_button("Smaller text", func(): _change_scale(-0.1), options)
+	_button("Help, credits & licenses", _show_about, options)
+	_button("Third-party license texts", _show_licenses, options)
 	if session != null and session.is_running():
-		_button("Save and suspend", _suspend_game, overlay_box)
+		_button("Save and suspend", _suspend_game, options)
 	_button("Back", _return_to_game, overlay_box)
 
 func _change_scale(delta: float) -> void:

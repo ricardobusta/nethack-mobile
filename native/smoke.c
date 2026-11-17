@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/stat.h>
 extern int total_tiles_used;
 
 int main(int argc, char **argv) {
@@ -11,6 +12,10 @@ int main(int argc, char **argv) {
     int first[256], commands = 0, maps = 0, restored = 0, ended = 0, tile_types = 0, tiles[4096] = {0};
     int restore_messages = 0;
     int64_t latest_turn = 0, inventory_turn = 0;
+    int checkpoint = argc == 3 && !strcmp(argv[2], "--checkpoint");
+    int save_failure = argc == 3 && !strcmp(argv[2], "--save-failure");
+    int failure_reported = 0;
+    char save_directory[4096]; snprintf(save_directory, sizeof save_directory, "%s/save", argv[1]);
     for (int i = 0; i < 256; ++i) first[i] = -1;
     if (!nm_start(argv[1], "MobileTest")) return 3;
     time_t deadline = time(NULL) + 60;
@@ -19,6 +24,7 @@ int main(int argc, char **argv) {
         if (!nm_poll(&e)) { usleep(1000); continue; }
         if (e.type == NM_MESSAGE && (getenv("NH_SMOKE_VERBOSE") || strstr(e.text, "error") || strstr(e.text, "Cannot") || strstr(e.text, "Program in disorder"))) fprintf(stderr, "engine: %s\n", e.text);
         if (e.type == NM_MESSAGE && strstr(e.text, "Restoring save file")) ++restore_messages;
+        if (e.type == NM_MESSAGE && strstr(e.text, "Save failed.")) failure_reported = 1;
         if (e.type == NM_READY) latest_turn = e.values[2];
         if (e.type == NM_GLYPH) {
             ++maps;
@@ -33,18 +39,21 @@ int main(int argc, char **argv) {
             case 0:
                 ++commands;
                 if (commands == 1) inventory_turn = latest_turn;
-                else if (commands <= 261 && latest_turn != inventory_turn) {
+                else if (latest_turn != inventory_turn) {
                     fprintf(stderr, "Inventory browsing consumed a game turn\n"); nm_stop(); return 10;
                 }
-                if (argc == 3 && commands == 3) {
+                if (checkpoint && commands == 3) {
                     puts("CHECKPOINT_READY"); fflush(stdout);
                     for (;;) pause();
                 }
                 if (commands <= 260) input.key = 'i';
                 else if (commands == 261) input.key = '#';
-                else if (commands == 262) input.key = 's';
-                else if (commands == 263) { nm_suspend(); continue; }
-                else if (commands == 264) input.key = 's';
+                else if (commands == 262) input.key = 'i';
+                else if (commands == 263) {
+                    if (save_failure && chmod(save_directory, 0500)) { nm_stop(); return 12; }
+                    nm_suspend(); continue;
+                }
+                else if (commands == 264) input.key = 'i';
                 else { input.key = '#'; }
                 break;
             case 2:
@@ -57,7 +66,7 @@ int main(int argc, char **argv) {
                 input.type = NM_MENU;
                 /* Inventory is interactive in 5.0: selecting the first item can
                  * wield/apply it and consume turns. This stress test browses. */
-                if (commands > 0 && commands <= 260) input.key = 27;
+                if ((commands > 0 && commands <= 260) || commands == 262 || commands == 264) input.key = 27;
                 else if (first[e.values[2]] >= 0) snprintf(input.text, sizeof input.text, "%d:-1", first[e.values[2]]);
                 break;
             case 5:
@@ -74,7 +83,10 @@ int main(int argc, char **argv) {
             if (getenv("NH_SMOKE_VERBOSE")) fprintf(stderr, "Session ended: status=%lld saved=%lld commands=%d\n", e.values[0], e.values[1], commands);
             ++ended;
             if (!restored) {
-                if (e.values[1] != 1) { fprintf(stderr, "Session ended without the requested save\n"); nm_stop(); return 11; }
+                if (save_failure) {
+                    chmod(save_directory, 0700);
+                    if (e.values[1] != 0 || !failure_reported) { fprintf(stderr, "Failed save was incorrectly confirmed or not reported\n"); nm_stop(); return 13; }
+                } else if (e.values[1] != 1) { fprintf(stderr, "Session ended without the requested save\n"); nm_stop(); return 11; }
                 restored = 1;
                 if (!nm_start(argv[1], "MobileTest")) return 6;
             } else {

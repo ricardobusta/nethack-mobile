@@ -57,6 +57,17 @@ func run() -> void:
 					if app.body.vertical or app.map.size.y < 200:
 						fail("Landscape did not reflow into a usable map layout")
 						return
+					var original_scale: float = app.ui_scale
+					app._change_scale(1.0)
+					app._show_settings()
+					await process_frame
+					await process_frame
+					var back: Control = app.overlay_box.get_child(app.overlay_box.get_child_count() - 1)
+					if back.get_global_rect().end.y > app.overlay.get_global_rect().end.y + 1:
+						fail("Large-text landscape settings pushed Back off screen")
+						return
+					app._change_scale(original_scale - app.ui_scale)
+					app._return_to_game()
 					if OS.get_cmdline_user_args().has("--screenshot"):
 						await RenderingServer.frame_post_draw
 						root.get_texture().get_image().save_png("res://../build/ui-landscape.png")

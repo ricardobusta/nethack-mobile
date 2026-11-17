@@ -136,3 +136,5 @@ if __name__ == '__main__':
                             process.wait()
                     call(folder / 'nh_smoke', game)
                     print('Process-death checkpoint recovery passed.')
+                    call(folder / 'nh_smoke', game, '--save-failure')
+                    print('Save-failure reporting and recovery passed.')
