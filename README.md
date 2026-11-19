@@ -81,6 +81,7 @@ There is no scheduled updater or in-app code download.
 ```sh
 python3 -m unittest discover -s tests -v
 godot --headless --path godot --script res://tests/ui_smoke.gd
+godot --headless --path godot --script res://tests/scroll_smoke.gd
 ```
 
 See [architecture](docs/ARCHITECTURE.md) and

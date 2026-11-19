@@ -32,6 +32,13 @@ is reconstructed by the frontend. Travel, adjacent interaction, targeting,
 inventory, and command availability come from the engine. UI gestures cannot
 send taps for undisplayed/unexplored cells.
 
+All UI scroll areas share `mobile_scroll.gd`. Touch gestures belong to the
+scroll area before its children receive input, so dragging buttons, text fields,
+quantity controls or labels moves the whole list. Stationary taps use normal GUI
+dispatch; swipes suppress item activation, coast after release, and stay within
+the content bounds. Touching a moving list stops it without activating a row.
+Mouse wheels, keyboard focus and scrollbar dragging retain Godot's behavior.
+
 Checkpoints are written only at top-level command boundaries, not inside
 targeting, text, or menu prompts. On pause/suspend, incomplete prompts are
 cancelled until the engine reaches a safe boundary, then upstream save runs.

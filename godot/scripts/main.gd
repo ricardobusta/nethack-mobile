@@ -1,6 +1,7 @@
 extends Control
 
 const MapView = preload("res://scripts/map_view.gd")
+const MobileScroll = preload("res://scripts/mobile_scroll.gd")
 const SOURCE_URL := "https://github.com/ricardobusta/nethack-mobile"
 var engine_version := "5.0.0"
 var save_namespace := "5.0.0-0-mobile1"
@@ -103,7 +104,7 @@ func _build_ui() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 14)
 	page.add_child(body)
-	info_scroll = ScrollContainer.new()
+	info_scroll = MobileScroll.new()
 	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	info_scroll.follow_focus = true
 	body.add_child(info_scroll)
@@ -223,7 +224,7 @@ func _show_error(text: String) -> void:
 		overlay_notice.show()
 
 func _scroll_list() -> VBoxContainer:
-	var scroll := ScrollContainer.new()
+	var scroll := MobileScroll.new()
 	scroll.follow_focus = true
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
