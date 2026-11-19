@@ -103,6 +103,17 @@ func run() -> void:
 	if number.value != 12 or number.get_node("Stepper/Minus").disabled:
 		fail("Numeric keyboard input did not update the stepper: text=%s value=%d focus=%s" % [number.input.text, number.value, root.gui_get_focus_owner()])
 		return
+	root.gui_release_focus()
+	await settle()
+	for pressed in [true, false]:
+		var tap := InputEventScreenTouch.new()
+		tap.position = number.input.get_global_rect().get_center()
+		tap.pressed = pressed
+		root.push_input(tap, true)
+	await settle()
+	if not number.input.has_selection() or number.input.get_selected_text() != "12":
+		fail("Tapping a numeric field must select its value for replacement")
+		return
 	number.get_node("Stepper/Plus").pressed.emit()
 	if number.value != 13:
 		fail("Quantity increase failed")
@@ -122,6 +133,17 @@ func run() -> void:
 	if number.value != 100 or number.input.text != "100":
 		fail("Editing a value with a nonzero minimum rejected partial input")
 		return
+	app._show_settings()
+	await settle()
+	app.menus[42] = []
+	for i in range(3):
+		app.menus[42].append({"text": "Choice %d" % i, "v": PackedInt64Array([42, i, 0, 1, 0, 0, 0, 0])})
+	app.active_prompt = {"v": PackedInt64Array([4, 1, 42])}
+	app._show_menu()
+	if app.search != null:
+		fail("Small choice menus should not need a search field")
+		return
+	app.active_prompt.clear()
 	app._show_settings()
 	await settle()
 	for control in app.overlay.find_children("*", "Button", true, false):

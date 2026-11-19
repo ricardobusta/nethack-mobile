@@ -86,12 +86,15 @@ func _tap(point: Vector2) -> void:
 		return
 	for pressed in [true, false]:
 		var mouse := InputEventMouseButton.new()
-		mouse.position = point
-		mouse.global_position = point
+		mouse.position = get_viewport().get_final_transform() * point
+		mouse.global_position = mouse.position
+		mouse.window_id = get_window().get_window_id()
 		mouse.button_index = MOUSE_BUTTON_LEFT
 		mouse.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
 		mouse.pressed = pressed
-		get_viewport().push_input(mouse, true)
+		# Use normal Input dispatch so native widgets see the matching pressed
+		# state (notably select-all-on-focus) as well as the GUI events.
+		Input.parse_input_event(mouse)
 
 func _move_to(value: float) -> void:
 	var horizontal := vertical_scroll_mode == SCROLL_MODE_DISABLED

@@ -77,7 +77,6 @@ func _ready() -> void:
 
 func _button(text: String, callback: Callable, parent: Node, compact := false) -> Button:
 	var b := ActionButton.instantiate() as Button
-	b.text = text
 	b.custom_minimum_size.x = 48 if compact else 80
 	if compact:
 		b.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -85,6 +84,7 @@ func _button(text: String, callback: Callable, parent: Node, compact := false) -
 		b.theme_type_variation = "PrimaryButton"
 	b.pressed.connect(callback)
 	parent.add_child(b)
+	b.text = text # Shape after inheriting the screen's font and density theme.
 	return b
 
 func _touch_size() -> float:
@@ -581,7 +581,9 @@ func _show_menu() -> void:
 	menu_how = int(active_prompt.v[1])
 	selected.clear()
 	_clear_overlay(String(titles.get(w, "Choose")))
-	search = _field(overlay_box, "Find an item", "Filter by name…").input
+	search = null
+	if menus.get(w, []).size() > 8:
+		search = _field(overlay_box, "Filter choices", "Search this list…").input
 	menu_list = _scroll_list()
 	for entry: Dictionary in menus.get(w, []):
 		var v: PackedInt64Array = entry.v
@@ -590,10 +592,10 @@ func _show_menu() -> void:
 		menu_list.add_child(row)
 		if int(v[3]) == 0 or menu_how == 0:
 			var label := Label.new()
-			label.text = entry.text
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			row.add_child(label)
+			label.text = entry.text
 		elif menu_how == 1:
 			var b := _button(String(entry.text), func(): _reply({"type": 4, "text": "%d:-1" % v[1]}), row)
 			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -613,7 +615,8 @@ func _show_menu() -> void:
 					selected[v[1]] = int(value) if value > 0 else -1)
 			if int(v[4]) & 1:
 				check.button_pressed = true
-	search.text_changed.connect(_filter_rows)
+	if search != null:
+		search.text_changed.connect(_filter_rows)
 	if menu_how != 1:
 		_button("Confirm" if menu_how == 2 else "Continue", func():
 			var result: Array[String] = []
