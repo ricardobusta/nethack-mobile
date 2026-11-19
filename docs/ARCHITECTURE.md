@@ -38,6 +38,11 @@ cancelled until the engine reaches a safe boundary, then upstream save runs.
 Death and finished games are not saved as live games. Self-recovery preserves
 checkpoint files and offers recovery after process termination.
 
+Returning from normal app backgrounding automatically restores a successfully
+suspended session without a confirmation screen or restore greeting. Restoration
+waits for both the save to finish and the app to return to the foreground.
+Explicit Save and suspend keeps its resume controls; save failures remain visible.
+
 Upstream checkpoints are not transactional snapshots of the entire filesystem.
 Interruption during a checkpoint or disk exhaustion still needs physical-device
 fault testing. A failed save is reported; the UI must not claim a successful

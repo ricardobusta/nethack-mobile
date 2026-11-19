@@ -75,6 +75,8 @@ func run() -> void:
 					await process_frame
 					app._show_directions()
 					app._return_to_game()
+					if not await verify_automatic_resume():
+						return
 					app._send_key(105)
 				elif boundaries == 2:
 					app._open_commands()
@@ -118,6 +120,29 @@ func fail(reason: String) -> void:
 	push_error(reason)
 	app.session.stop()
 	quit(1)
+
+func verify_automatic_resume() -> bool:
+	var position: Vector2i = app.map.player
+	for foreground_early in [false, true]:
+		app._notification(Control.NOTIFICATION_APPLICATION_PAUSED)
+		if foreground_early:
+			app._notification(Control.NOTIFICATION_APPLICATION_RESUMED)
+		var timeout := Time.get_ticks_msec() + 10000
+		while Time.get_ticks_msec() < timeout:
+			await process_frame
+			if not foreground_early and app.resume_ready:
+				if app.session.is_running():
+					fail("Background save restarted before returning to the app")
+					return false
+				app._notification(Control.NOTIFICATION_APPLICATION_RESUMED)
+				foreground_early = true
+			if not app.auto_resume and not app.active_prompt.is_empty() and int(app.active_prompt.v[0]) == 0:
+				break
+		if app.auto_resume or app.active_prompt.is_empty() or app.overlay.visible or app.map.player != position or app.map.cells.size() < 20:
+			fail("Automatic resume did not return directly to the restored game")
+			return false
+	print("Background resume passed both save/foreground orderings without a confirmation screen.")
+	return true
 
 func verify_asset_refresh() -> bool:
 	var name := "AssetCheck" + str(Time.get_ticks_usec())

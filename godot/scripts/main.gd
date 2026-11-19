@@ -37,6 +37,10 @@ var settings := ConfigFile.new()
 var actions: Array = ["Inventory", "Search", "Wait", "Pick up", "Down"]
 var ui_scale := 1.0
 var auto_resume := false
+var application_paused := false
+var background_resume := false
+var resume_ready := false
+var quiet_resume := false
 var keyboard_ctrl := false
 var keyboard_alt := false
 var key_entry: LineEdit
@@ -284,7 +288,7 @@ func _prepare_game(name_text: String) -> String:
 		return ""
 	return ProjectSettings.globalize_path(directory)
 
-func _start(name_text: String, allow_new_version := false) -> void:
+func _start(name_text: String, allow_new_version := false, silently := false) -> void:
 	var regex := RegEx.new()
 	regex.compile("^[A-Za-z][A-Za-z0-9_]{0,23}$")
 	if regex.search(name_text) == null:
@@ -315,9 +319,14 @@ func _start(name_text: String, allow_new_version := false) -> void:
 	menus.clear()
 	commands.clear()
 	active_prompt.clear()
+	auto_resume = false
+	background_resume = false
+	resume_ready = false
+	quiet_resume = silently
 	if session.start(directory, name_text):
 		overlay.hide()
-		message.text = "Entering the dungeon…"
+		if not silently:
+			message.text = "Entering the dungeon…"
 	else:
 		_show_error("The native engine could not start.")
 
@@ -352,6 +361,8 @@ func _handle_event(e: Dictionary) -> void:
 	var v: PackedInt64Array = e.v
 	match int(e.type):
 		1:
+			if quiet_resume and (String(e.text).begins_with("Restoring save file") or String(e.text).ends_with("welcome back to NetHack!")):
+				return
 			if not windows.has(v[0]):
 				windows[v[0]] = []
 			windows[v[0]].append(String(e.text))
@@ -393,10 +404,17 @@ func _handle_event(e: Dictionary) -> void:
 			commands.append(e)
 		12:
 			active_prompt = e
+			if int(v[0]) == 0:
+				quiet_resume = false
 			_show_prompt()
 		13:
 			active_prompt.clear()
 			if auto_resume:
+				if background_resume and int(v[1]) == 1:
+					resume_ready = true
+					_resume_if_ready()
+					return
+				background_resume = false
 				message.text = "Game saved. Resume when ready." if int(v[1]) == 1 else "Session stopped. If saving failed, recovery files have been preserved."
 				_clear_overlay("Game safely suspended" if int(v[1]) == 1 else "Session stopped — check messages")
 				_button("Resume", func():
@@ -696,15 +714,29 @@ func _show_licenses() -> void:
 		texts.append(String(name) + "\n" + String(licenses[name]))
 	_show_text("\n\n".join(texts))
 
-func _suspend_game() -> void:
+func _resume_if_ready() -> void:
+	if resume_ready and not application_paused:
+		resume_ready = false
+		background_resume = false
+		auto_resume = false
+		_start(current_name, false, true)
+
+func _suspend_game(automatic := false) -> void:
 	if session != null and session.is_running():
+		if not auto_resume:
+			background_resume = automatic
 		auto_resume = true
 		session.suspend()
-		message.text = "Saving at a safe boundary…"
+		if not automatic:
+			message.text = "Saving at a safe boundary…"
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
-		_suspend_game()
+		application_paused = true
+		_suspend_game(true)
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		application_paused = false
+		_resume_if_ready()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if session != null:
 			session.stop()
