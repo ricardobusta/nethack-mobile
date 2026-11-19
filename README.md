@@ -82,11 +82,15 @@ There is no scheduled updater or in-app code download.
 python3 -m unittest discover -s tests -v
 godot --headless --path godot --script res://tests/ui_smoke.gd
 godot --headless --path godot --script res://tests/scroll_smoke.gd
+godot --headless --path godot --script res://tests/widget_smoke.gd
 ```
 
 See [architecture](docs/ARCHITECTURE.md) and
 [release/signing instructions](docs/RELEASE.md). iOS builds are deferred;
 the engine C API and platform boundary are kept portable. Unity is not used.
+
+Reusable mobile input scenes and sizing conventions are documented in
+[the UI component library](godot/ui/README.md).
 
 ## License
 

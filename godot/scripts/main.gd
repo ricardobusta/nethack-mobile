@@ -2,6 +2,11 @@ extends Control
 
 const MapView = preload("res://scripts/map_view.gd")
 const MobileScroll = preload("res://scripts/mobile_scroll.gd")
+const MobileTheme = preload("res://ui/mobile_theme.gd")
+const ActionButton = preload("res://ui/widgets/action_button.tscn")
+const TextField = preload("res://ui/widgets/text_field.tscn")
+const NumberField = preload("res://ui/widgets/number_field.tscn")
+const ToggleField = preload("res://ui/widgets/toggle_field.tscn")
 const SOURCE_URL := "https://github.com/ricardobusta/nethack-mobile"
 var engine_version := "5.0.0"
 var save_namespace := "5.0.0-0-mobile1"
@@ -17,7 +22,9 @@ var info_scroll: ScrollContainer
 var status: Label
 var message: Label
 var hint: Label
-var action_bar: HFlowContainer
+var action_bar: HBoxContainer
+var action_strip: ScrollContainer
+var navigation_strip: ScrollContainer
 var overlay: PanelContainer
 var overlay_box: VBoxContainer
 var overlay_notice: Label
@@ -47,6 +54,7 @@ var keyboard_alt := false
 var key_entry: LineEdit
 var menu_how := 0
 var dirty_ui := false
+var name_widget: VBoxContainer
 
 func _ready() -> void:
 	var build_info = JSON.parse_string(FileAccess.get_file_as_string("res://data/build.json"))
@@ -56,9 +64,9 @@ func _ready() -> void:
 		asset_revision = String(build_info.get("assets_sha256", build_info.get("source_revision", asset_revision)))
 	settings.load("user://settings.cfg")
 	actions = settings.get_value("ui", "actions", actions)
-	ui_scale = float(settings.get_value("ui", "scale", 1.0))
-	theme = Theme.new()
-	theme.default_font_size = int(22 * ui_scale)
+	ui_scale = clampf(float(settings.get_value("ui", "scale", 1.0)), 0.9, 1.5)
+	theme = MobileTheme.create(ui_scale)
+	_configure_display()
 	_build_ui()
 	get_viewport().size_changed.connect(_layout)
 	get_tree().auto_accept_quit = false
@@ -68,20 +76,41 @@ func _ready() -> void:
 	_layout()
 
 func _button(text: String, callback: Callable, parent: Node, compact := false) -> Button:
-	var b := Button.new()
+	var b := ActionButton.instantiate() as Button
 	b.text = text
-	b.custom_minimum_size = Vector2(76 if compact else 96, _touch_size())
-	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.custom_minimum_size.x = 48 if compact else 80
+	if compact:
+		b.autowrap_mode = TextServer.AUTOWRAP_OFF
+	if text in ["Start / resume character", "Submit", "Confirm", "Continue"]:
+		b.theme_type_variation = "PrimaryButton"
 	b.pressed.connect(callback)
 	parent.add_child(b)
 	return b
 
 func _touch_size() -> float:
-	if not OS.has_feature("mobile"):
-		return 72.0 * ui_scale
-	var density := maxf(1.0, float(DisplayServer.screen_get_dpi()) / 160.0)
-	var pixels_per_unit := float(get_window().size.y) / maxf(1.0, get_viewport_rect().size.y)
-	return maxf(72.0 * ui_scale, 48.0 * density / maxf(0.1, pixels_per_unit))
+	return MobileTheme.touch_size(ui_scale)
+
+func _configure_display() -> void:
+	var window := get_window()
+	var logical := MobileTheme.logical_size(window.size, DisplayServer.screen_get_dpi(), OS.has_feature("mobile"))
+	if window.content_scale_size != logical:
+		window.content_scale_size = logical
+
+func _field(parent: Node, title: String, placeholder := "", helper := "") -> VBoxContainer:
+	var field := TextField.instantiate() as VBoxContainer
+	field.label_text = title
+	field.placeholder = placeholder
+	field.helper_text = helper
+	parent.add_child(field)
+	return field
+
+func _toggle(parent: Node, title: String, checked: bool, helper := "") -> Button:
+	var field := ToggleField.instantiate() as Button
+	field.label_text = title
+	field.helper_text = helper
+	parent.add_child(field)
+	field.set_checked(checked)
+	return field
 
 func _build_ui() -> void:
 	root_margin = MarginContainer.new()
@@ -94,6 +123,8 @@ func _build_ui() -> void:
 	page.add_child(header)
 	var title := Label.new()
 	title.text = "NETHACK  /  MOBILE"
+	title.theme_type_variation = "FieldLabel"
+	title.clip_text = true
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_color_override("font_color", Color("e7c66b"))
 	header.add_child(title)
@@ -131,18 +162,25 @@ func _build_ui() -> void:
 	hint = Label.new()
 	hint.text = "Tap a destination · Pinch to zoom · Drag to explore"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.max_lines_visible = 2
 	hint.add_theme_color_override("font_color", Color("99a9bf"))
 	page.add_child(hint)
-	action_bar = HFlowContainer.new()
-	page.add_child(action_bar)
+	action_strip = _horizontal_strip(page)
+	action_bar = HBoxContainer.new()
+	action_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_strip.add_child(action_bar)
 	_refresh_actions()
+	navigation_strip = _horizontal_strip(page)
 	var navigation := HBoxContainer.new()
-	page.add_child(navigation)
+	navigation.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	navigation_strip.add_child(navigation)
 	_button("Commands", _open_commands, navigation)
 	_button("Direction", _show_directions, navigation)
 	_button("Keys", _show_keyboard, navigation)
 	_button("Stop", func(): _send_key(27), navigation, true)
 	_button("Center", func(): map.recenter(), navigation, true)
+	for button in navigation.get_children():
+		button.autowrap_mode = TextServer.AUTOWRAP_OFF
 	overlay = PanelContainer.new()
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color("101925")
@@ -160,18 +198,37 @@ func _build_ui() -> void:
 	overlay.visibility_changed.connect(func(): page.visible = not overlay.visible)
 	overlay.hide()
 
+func _horizontal_strip(parent: Node) -> ScrollContainer:
+	var strip := MobileScroll.new()
+	strip.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	strip.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip.follow_focus = true
+	parent.add_child(strip)
+	return strip
+
 func _layout() -> void:
+	_configure_display()
 	var viewport := get_viewport_rect().size
 	var landscape := viewport.x > viewport.y
 	body.vertical = not landscape
-	info_scroll.custom_minimum_size.x = clampf(viewport.x * 0.28, 280, 400) if landscape else 0
+	var compact := landscape or viewport.y < 760 or ui_scale > 1.2
+	if compact and hint.get_parent() != info_column:
+		hint.reparent(info_column)
+	elif not compact and hint.get_parent() != page:
+		hint.reparent(page)
+		page.move_child(hint, 2)
+	for strip in [action_strip, navigation_strip]:
+		strip.custom_minimum_size.y = _touch_size()
+	map.custom_minimum_size.y = 80 if viewport.y < 700 or ui_scale > 1.2 else 160
+	info_scroll.custom_minimum_size.x = clampf(viewport.x * 0.28, 200, 320) if landscape else 0
 	info_scroll.size_flags_horizontal = Control.SIZE_FILL if landscape else Control.SIZE_EXPAND_FILL
 	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL if landscape else Control.SIZE_FILL
 	var safe := DisplayServer.get_display_safe_area()
 	var screen := DisplayServer.screen_get_size()
-	var left := 12.0
+	var left := 16.0
 	var top := 12.0
-	var right := 12.0
+	var right := 16.0
 	var bottom := 12.0
 	if OS.has_feature("mobile") and screen.x > 0:
 		left += safe.position.x * viewport.x / screen.x
@@ -186,30 +243,33 @@ func _layout() -> void:
 		container.add_theme_constant_override("margin_top", int(top))
 		container.add_theme_constant_override("margin_right", int(right))
 		container.add_theme_constant_override("margin_bottom", int(bottom))
-	overlay.offset_left = left + 6
+	var form_margin := maxf(0.0, (viewport.x - left - right - 640.0) / 2.0)
+	overlay.offset_left = left + form_margin
 	overlay.offset_top = top + 6
-	overlay.offset_right = -right - 6
+	overlay.offset_right = -right - form_margin
 	overlay.offset_bottom = -bottom - 6
 	message.max_lines_visible = 2 if viewport.x > viewport.y else 3
-	message.custom_minimum_size.y = 48 if viewport.x > viewport.y else 86
-	info_scroll.custom_minimum_size.y = 0 if landscape else info_column.get_combined_minimum_size().y
+	message.custom_minimum_size.y = 44 if landscape else 64
+	info_scroll.custom_minimum_size.y = 0 if landscape else minf(info_column.get_combined_minimum_size().y, minf(180, viewport.y * 0.2))
 
 func _refresh_actions() -> void:
 	for child in action_bar.get_children():
 		child.queue_free()
 	for action in actions:
 		if ACTIONS.has(action):
-			_button(action, func(): _send_key(String(ACTIONS[action]).unicode_at(0)), action_bar)
+			var button := _button(action, func(): _send_key(String(ACTIONS[action]).unicode_at(0)), action_bar)
+			button.autowrap_mode = TextServer.AUTOWRAP_OFF
 
 func _clear_overlay(title: String) -> void:
+	_dismiss_keyboard()
 	for child in overlay_box.get_children():
 		overlay_box.remove_child(child)
 		child.queue_free()
 	var label := Label.new()
-	label.text = title
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", int(28 * ui_scale))
+	label.theme_type_variation = "Heading"
 	overlay_box.add_child(label)
+	label.text = title
 	overlay_notice = Label.new()
 	overlay_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	overlay_notice.add_theme_color_override("font_color", Color("ffb0a8"))
@@ -232,6 +292,7 @@ func _scroll_list() -> VBoxContainer:
 	overlay_box.add_child(scroll)
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 16)
 	scroll.add_child(list)
 	return list
 
@@ -239,15 +300,14 @@ func _show_home() -> void:
 	_clear_overlay("NetHack Mobile")
 	var content := _scroll_list()
 	var intro := Label.new()
-	intro.text = "The dungeon awaits.\n\nTap to travel, choose actions below, and discover every command through the command browser. Both ASCII and classic tiles are available."
+	intro.text = "The dungeon awaits.\n\nContinue your adventure, or choose a name for a new character."
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(intro)
-	var name_field := LineEdit.new()
-	name_field.placeholder_text = "Character name"
+	name_widget = _field(content, "Character name", "Your adventurer's name", "1–24 letters, digits or underscores. Start with a letter.")
+	var name_field: LineEdit = name_widget.input
 	name_field.text = settings.get_value("game", "last_name", "Adventurer")
 	name_field.max_length = 24
-	name_field.custom_minimum_size.y = _touch_size()
-	content.add_child(name_field)
+	name_widget.text_submitted.connect(func(_text): _start(name_field.text))
 	var start_button := _button("Start / resume character", func(): _start(name_field.text), content)
 	start_button.disabled = session == null
 	if session == null:
@@ -293,7 +353,11 @@ func _start(name_text: String, allow_new_version := false, silently := false) ->
 	var regex := RegEx.new()
 	regex.compile("^[A-Za-z][A-Za-z0-9_]{0,23}$")
 	if regex.search(name_text) == null:
-		_show_error("Use 1–24 letters, digits or underscores; start with a letter.")
+		if is_instance_valid(name_widget):
+			name_widget.show_error("Start with a letter. Use up to 24 letters, digits or underscores.")
+			name_widget.input.grab_focus()
+		else:
+			_show_error("Use 1–24 letters, digits or underscores; start with a letter.")
 		return
 	if not allow_new_version and DirAccess.dir_exists_absolute("user://games") and not DirAccess.dir_exists_absolute("user://games/%s/%s" % [save_namespace, name_text]):
 		for saved_version: String in DirAccess.get_directories_at("user://games"):
@@ -438,6 +502,7 @@ func _reply(input: Dictionary) -> void:
 		return
 	input.request = active_prompt.request
 	if session.respond(input):
+		_dismiss_keyboard()
 		active_prompt = {}
 		overlay.hide()
 
@@ -469,24 +534,28 @@ func _show_prompt() -> void:
 		2:
 			_clear_overlay(String(active_prompt.text))
 			var choices := HFlowContainer.new()
-			overlay_box.add_child(choices)
+			_scroll_list().add_child(choices)
 			var chars := String(active_prompt.extra).split(String.chr(27))[0]
 			if chars.is_empty():
 				chars = "yn"
 			for c in chars:
 				var label: String = {"y": "Yes", "n": "No", "q": "Quit", "a": "All", "r": "Recover"}.get(c, c)
 				_button(label, func(): _send_key(c.unicode_at(0)), choices)
-			_button("Keyboard / quantity", _show_keyboard, overlay_box)
-			_button("Cancel", func(): _send_key(27), overlay_box)
+			var footer := HBoxContainer.new()
+			overlay_box.add_child(footer)
+			_button("Keys / count", _show_keyboard, footer)
+			_button("Cancel", func(): _send_key(27), footer)
 		3:
 			_clear_overlay(String(active_prompt.text))
-			var line := LineEdit.new()
-			line.custom_minimum_size.y = _touch_size()
+			var form := _scroll_list()
+			var field := _field(form, "Your answer", "Enter text")
+			var line: LineEdit = field.input
 			line.max_length = 255
-			overlay_box.add_child(line)
-			line.text_submitted.connect(func(text): _reply({"type": 3, "text": text}))
-			_button("Submit", func(): _reply({"type": 3, "text": line.text}), overlay_box)
-			_button("Cancel", func(): _send_key(27), overlay_box)
+			field.text_submitted.connect(func(text): _reply({"type": 3, "text": text}))
+			var footer := HBoxContainer.new()
+			overlay_box.add_child(footer)
+			_button("Cancel", func(): _send_key(27), footer)
+			_button("Submit", func(): _reply({"type": 3, "text": line.text}), footer)
 			line.grab_focus()
 		4:
 			_show_menu()
@@ -512,14 +581,11 @@ func _show_menu() -> void:
 	menu_how = int(active_prompt.v[1])
 	selected.clear()
 	_clear_overlay(String(titles.get(w, "Choose")))
-	search = LineEdit.new()
-	search.placeholder_text = "Filter items…"
-	search.custom_minimum_size.y = _touch_size()
-	overlay_box.add_child(search)
+	search = _field(overlay_box, "Find an item", "Filter by name…").input
 	menu_list = _scroll_list()
 	for entry: Dictionary in menus.get(w, []):
 		var v: PackedInt64Array = entry.v
-		var row := HBoxContainer.new()
+		var row := VBoxContainer.new()
 		row.set_meta("filter", String(entry.text).to_lower())
 		menu_list.add_child(row)
 		if int(v[3]) == 0 or menu_how == 0:
@@ -532,20 +598,12 @@ func _show_menu() -> void:
 			var b := _button(String(entry.text), func(): _reply({"type": 4, "text": "%d:-1" % v[1]}), row)
 			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		else:
-			var check := CheckButton.new()
-			check.text = entry.text
-			check.custom_minimum_size.y = _touch_size()
-			check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			row.add_child(check)
-			var quantity := SpinBox.new()
-			quantity.min_value = 0
-			quantity.max_value = 1000000
-			quantity.value = 0
-			quantity.custom_minimum_size = Vector2(140, _touch_size())
-			quantity.tooltip_text = "0 means the entire stack"
+			var check := _toggle(row, String(entry.text), false)
+			var quantity := NumberField.instantiate() as VBoxContainer
 			row.add_child(quantity)
+			quantity.hide()
 			check.toggled.connect(func(on):
+				quantity.visible = on
 				if on:
 					selected[v[1]] = int(quantity.value) if quantity.value > 0 else -1
 				else:
@@ -577,10 +635,7 @@ func _open_commands() -> void:
 
 func _show_commands() -> void:
 	_clear_overlay("All game commands")
-	search = LineEdit.new()
-	search.placeholder_text = "Search commands…"
-	search.custom_minimum_size.y = _touch_size()
-	overlay_box.add_child(search)
+	search = _field(overlay_box, "Find a command", "Search actions…").input
 	menu_list = _scroll_list()
 	for command: Dictionary in commands:
 		var b := _button("%s — %s" % [command.text, command.extra], func(): _reply({"type": 5, "text": command.text}), menu_list)
@@ -593,8 +648,8 @@ func _show_directions() -> void:
 	_clear_overlay("Direction / movement")
 	var grid := GridContainer.new()
 	grid.columns = 3
-	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	overlay_box.add_child(grid)
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll_list().add_child(grid)
 	var letters := ["y", "k", "u", "h", ".", "l", "b", "j", "n"]
 	var labels := ["↖", "↑", "↗", "←", "Wait / self", "→", "↙", "↓", "↘"]
 	for i in range(9):
@@ -607,8 +662,9 @@ func _show_directions() -> void:
 
 func _show_keyboard() -> void:
 	_clear_overlay(String(active_prompt.get("text", "NetHack keyboard")))
+	var list := _scroll_list()
 	var modifiers := HBoxContainer.new()
-	overlay_box.add_child(modifiers)
+	list.add_child(modifiers)
 	var ctrl := _button("Ctrl", func(): keyboard_ctrl = not keyboard_ctrl, modifiers)
 	ctrl.toggle_mode = true
 	ctrl.button_pressed = keyboard_ctrl
@@ -616,14 +672,10 @@ func _show_keyboard() -> void:
 	alt.toggle_mode = true
 	alt.button_pressed = keyboard_alt
 	_button("Directions", _show_directions, modifiers)
-	key_entry = LineEdit.new()
-	key_entry.placeholder_text = "Type a key (or use buttons below)"
-	key_entry.custom_minimum_size.y = _touch_size()
-	overlay_box.add_child(key_entry)
+	key_entry = _field(list, "Key", "Type a key or use the buttons below").input
 	key_entry.text_changed.connect(func(text):
 		if not text.is_empty():
 			_keyboard_key(text.unicode_at(0)))
-	var list := _scroll_list()
 	for letters in ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM", "<>.,:;!?@#", "$%^&*()-_=+", "[]{}\\|/\"'`~"]:
 		var row := HFlowContainer.new()
 		list.add_child(row)
@@ -631,7 +683,7 @@ func _show_keyboard() -> void:
 			var b := _button(c, func(): _keyboard_key(c.unicode_at(0)), row, true)
 			b.custom_minimum_size.x = _touch_size()
 	var controls := HBoxContainer.new()
-	overlay_box.add_child(controls)
+	list.add_child(controls)
 	_button("Esc", func(): _send_key(27), controls)
 	_button("Space", func(): _send_key(32), controls)
 	_button("Enter", func(): _send_key(13), controls)
@@ -647,12 +699,18 @@ func _keyboard_key(key: int) -> void:
 	_send_key(key)
 
 func _return_to_game() -> void:
+	_dismiss_keyboard()
 	if not active_prompt.is_empty():
 		_show_prompt()
 	elif session != null and session.is_running():
 		overlay.hide()
 	else:
 		_show_home()
+
+func _dismiss_keyboard() -> void:
+	get_viewport().gui_release_focus()
+	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		DisplayServer.virtual_keyboard_hide()
 
 func _toggle_mode() -> void:
 	map.tiled = not map.tiled
@@ -664,11 +722,20 @@ func _toggle_mode() -> void:
 func _show_settings() -> void:
 	_clear_overlay("Settings")
 	var options := _scroll_list()
-	_button("Switch ASCII / tiles", _toggle_mode, options)
+	var tiles := _toggle(options, "Use tiles", map.tiled, "Turn off for classic ASCII characters.")
+	tiles.toggled.connect(func(_on): _toggle_mode())
+	var text_size := NumberField.instantiate() as VBoxContainer
+	text_size.label_text = "Text size"
+	text_size.helper_text = "100% is the default. Touch targets scale with the text."
+	text_size.minimum = 90
+	text_size.maximum = 150
+	text_size.step = 10
+	text_size.suffix = "%"
+	options.add_child(text_size)
+	text_size.value = roundi(ui_scale * 100)
+	text_size.value_changed.connect(func(value): _change_scale(value / 100.0 - ui_scale))
 	_button("Message history", func(): _show_text("\n".join(history)), options)
 	_button("Customize action bar", _customize_actions, options)
-	_button("Larger text", func(): _change_scale(0.1), options)
-	_button("Smaller text", func(): _change_scale(-0.1), options)
 	_button("Help, credits & licenses", _show_about, options)
 	_button("Third-party license texts", _show_licenses, options)
 	if session != null and session.is_running():
@@ -676,8 +743,8 @@ func _show_settings() -> void:
 	_button("Back", _return_to_game, overlay_box)
 
 func _change_scale(delta: float) -> void:
-	ui_scale = clampf(ui_scale + delta, 0.8, 1.5)
-	theme.default_font_size = int(22 * ui_scale)
+	ui_scale = clampf(ui_scale + delta, 0.9, 1.5)
+	theme = MobileTheme.create(ui_scale)
 	settings.set_value("ui", "scale", ui_scale)
 	settings.save("user://settings.cfg")
 
@@ -685,18 +752,14 @@ func _customize_actions() -> void:
 	_clear_overlay("Action bar — choose up to 6")
 	var list := _scroll_list()
 	for action in ACTIONS:
-		var check := CheckButton.new()
-		check.text = action
-		check.custom_minimum_size.y = _touch_size()
-		check.button_pressed = action in actions
-		list.add_child(check)
+		var check := _toggle(list, action, action in actions)
 		check.toggled.connect(func(on):
 			if on and actions.size() < 6:
 				actions.append(action)
 			elif not on:
 				actions.erase(action)
 			else:
-				check.set_pressed_no_signal(false)
+				check.set_checked(false)
 			settings.set_value("ui", "actions", actions)
 			settings.save("user://settings.cfg")
 			_refresh_actions())

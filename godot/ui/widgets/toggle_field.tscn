@@ -1,0 +1,45 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/widgets/toggle_field.gd" id="1"]
+
+[node name="ToggleField" type="Button"]
+custom_minimum_size = Vector2(0, 68)
+size_flags_horizontal = 3
+theme_type_variation = &"ToggleRow"
+toggle_mode = true
+script = ExtResource("1")
+
+[node name="Row" type="HBoxContainer" parent="."]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = -16.0
+offset_bottom = -12.0
+mouse_filter = 2
+
+[node name="Copy" type="VBoxContainer" parent="Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="Label" type="Label" parent="Row/Copy"]
+layout_mode = 2
+text = "Option"
+autowrap_mode = 3
+mouse_filter = 2
+
+[node name="Helper" type="Label" parent="Row/Copy"]
+layout_mode = 2
+theme_type_variation = &"Caption"
+autowrap_mode = 3
+mouse_filter = 2
+
+[node name="State" type="Label" parent="Row"]
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+text = "Off"
+horizontal_alignment = 2
+vertical_alignment = 1
+mouse_filter = 2

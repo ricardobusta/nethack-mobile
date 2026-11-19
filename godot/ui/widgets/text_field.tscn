@@ -1,0 +1,35 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/widgets/text_field.gd" id="1"]
+
+[node name="TextField" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+script = ExtResource("1")
+
+[node name="Label" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Text"
+autowrap_mode = 3
+
+[node name="Editor" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Input" type="LineEdit" parent="Editor"]
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+expand_to_text_length = false
+
+[node name="Clear" type="Button" parent="Editor"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+theme_type_variation = &"QuietButton"
+text = "×"
+tooltip_text = "Clear text"
+
+[node name="Helper" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"Caption"
+autowrap_mode = 3

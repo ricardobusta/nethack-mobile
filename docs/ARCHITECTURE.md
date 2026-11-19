@@ -39,6 +39,14 @@ dispatch; swipes suppress item activation, coast after release, and stay within
 the content bounds. Touching a moving list stops it without activating a row.
 Mouse wheels, keyboard focus and scrollbar dragging retain Godot's behavior.
 
+The reusable scene library in `godot/ui/widgets` supplies action buttons, labeled
+text/search fields with validation, numeric steppers and full-row toggles. A shared
+theme sets typography, colors, spacing and touch sizes. Android uses a canvas in
+density-independent units; changing resolution preserves readable physical text
+and touch sizes. Forms cap their width on tablets, scroll above the keyboard, and
+game action strips scroll horizontally on narrow screens. See `godot/ui/README.md`
+for component contracts and verification commands.
+
 Checkpoints are written only at top-level command boundaries, not inside
 targeting, text, or menu prompts. On pause/suspend, incomplete prompts are
 cancelled until the engine reaches a safe boundary, then upstream save runs.

@@ -1,0 +1,46 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/widgets/number_field.gd" id="1"]
+
+[node name="NumberField" type="VBoxContainer"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+script = ExtResource("1")
+
+[node name="Label" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Quantity"
+
+[node name="Stepper" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Minus" type="Button" parent="Stepper"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+text = "−"
+tooltip_text = "Decrease value"
+
+[node name="Input" type="LineEdit" parent="Stepper"]
+custom_minimum_size = Vector2(64, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+alignment = 1
+max_length = 7
+virtual_keyboard_type = 2
+select_all_on_focus = true
+
+[node name="Suffix" type="Label" parent="Stepper"]
+layout_mode = 2
+
+[node name="Plus" type="Button" parent="Stepper"]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+text = "+"
+tooltip_text = "Increase value"
+
+[node name="Helper" type="Label" parent="."]
+layout_mode = 2
+theme_type_variation = &"Caption"
+autowrap_mode = 3

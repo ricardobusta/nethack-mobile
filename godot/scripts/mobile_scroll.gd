@@ -11,6 +11,9 @@ var velocity := 0.0
 var last_motion := 0
 var stopping_fling := false
 
+func _axis_value(point: Vector2) -> float:
+	return point.x if vertical_scroll_mode == SCROLL_MODE_DISABLED else point.y
+
 func _inside(point: Vector2) -> bool:
 	if not is_visible_in_tree() or not get_global_rect().has_point(point):
 		return false
@@ -50,7 +53,7 @@ func _input(event: InputEvent) -> void:
 			start = event.position
 			previous = start
 			dragging = false
-			offset = scroll_vertical
+			offset = scroll_horizontal if vertical_scroll_mode == SCROLL_MODE_DISABLED else scroll_vertical
 			velocity = 0.0
 			last_motion = Time.get_ticks_msec()
 		elif event.index == finger:
@@ -72,7 +75,7 @@ func _input(event: InputEvent) -> void:
 		if dragging:
 			var now := Time.get_ticks_msec()
 			var elapsed := maxf(0.008, (now - last_motion) / 1000.0)
-			var distance: float = previous.y - event.position.y
+			var distance := _axis_value(previous) - _axis_value(event.position)
 			velocity = lerpf(velocity, distance / elapsed, 0.6)
 			_move_to(offset + distance)
 			last_motion = now
@@ -91,9 +94,13 @@ func _tap(point: Vector2) -> void:
 		get_viewport().push_input(mouse, true)
 
 func _move_to(value: float) -> void:
-	var bar := get_v_scroll_bar()
+	var horizontal := vertical_scroll_mode == SCROLL_MODE_DISABLED
+	var bar: ScrollBar = get_h_scroll_bar() if horizontal else get_v_scroll_bar()
 	offset = clampf(value, 0.0, maxf(0.0, bar.max_value - bar.page))
-	scroll_vertical = roundi(offset)
+	if horizontal:
+		scroll_horizontal = roundi(offset)
+	else:
+		scroll_vertical = roundi(offset)
 	if not is_equal_approx(offset, value):
 		velocity = 0.0
 

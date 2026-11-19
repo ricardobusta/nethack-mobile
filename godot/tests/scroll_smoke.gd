@@ -12,16 +12,16 @@ func touch(position: Vector2, pressed: bool) -> void:
 	event.pressed = pressed
 	root.push_input(event, true)
 
-func swipe(start: Vector2, distance: float) -> void:
+func swipe(start: Vector2, distance: float, axis := Vector2.DOWN) -> void:
 	touch(start, true)
 	await process_frame
 	for i in range(1, 9):
 		var event := InputEventScreenDrag.new()
-		event.position = start + Vector2(0, distance * i / 8.0)
-		event.relative = Vector2(0, distance / 8.0)
+		event.position = start + axis * distance * i / 8.0
+		event.relative = axis * distance / 8.0
 		root.push_input(event, true)
 		await process_frame
-	touch(start + Vector2(0, distance), false)
+	touch(start + axis * distance, false)
 	await process_frame
 
 func run() -> void:
@@ -124,5 +124,27 @@ func run() -> void:
 		push_error("Desktop mouse-wheel scrolling regressed")
 		quit(1)
 		return
-	print("Mobile scroll passed: buttons, toggles, fields, quantities, text, inertia, bounds, stop-on-touch and single taps.")
+	scroll.hide()
+	var strip := MobileScroll.new()
+	strip.position = Vector2(20, 20)
+	strip.size = Vector2(360, 100)
+	strip.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	strip.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(strip)
+	var actions := HBoxContainer.new()
+	strip.add_child(actions)
+	for i in range(20):
+		var button := Button.new()
+		button.text = "Action %d" % i
+		button.custom_minimum_size = Vector2(100, 64)
+		button.pressed.connect(func(): activated += 1)
+		actions.add_child(button)
+	await process_frame
+	await process_frame
+	await swipe(Vector2(250, 60), -180, Vector2.RIGHT)
+	if strip.scroll_horizontal < 100 or activated != 1:
+		push_error("Horizontal action strips must swipe without triggering actions")
+		quit(1)
+		return
+	print("Mobile scroll passed: buttons, toggles, fields, quantities, text, inertia, bounds, stop-on-touch, taps and horizontal action strips.")
 	quit(0)
