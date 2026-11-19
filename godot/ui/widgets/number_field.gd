@@ -15,6 +15,7 @@ var input: LineEdit:
 	get: return $Stepper/Input
 
 func _ready() -> void:
+	current = clampi(current, minimum, maximum)
 	$Label.text = label_text
 	$Helper.text = helper_text
 	$Helper.visible = not helper_text.is_empty()

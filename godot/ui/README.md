@@ -32,3 +32,8 @@ godot --headless --path godot --script res://tests/ui_smoke.gd
 
 For rendered form captures, run `widget_smoke.gd` without `--headless` and append
 `-- --screenshot`. Images are written to `build/widgets-*.png`.
+
+For Android software-keyboard acceptance, use a touch-only AVD (`hw.keyboard=no`).
+Godot suppresses its virtual keyboard when Android reports a hardware keyboard;
+the emulator's "show keyboard with hardware keyboard" setting alone does not
+override that engine behavior. Test both text and numeric keyboard types.

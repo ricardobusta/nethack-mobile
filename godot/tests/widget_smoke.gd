@@ -89,8 +89,13 @@ func run() -> void:
 		fail("Text entry or clearing the field error failed")
 		return
 	var number := NumberField.instantiate()
+	number.minimum = 5
 	app.name_widget.get_parent().add_child(number)
 	await settle()
+	if number.value != 5:
+		fail("A numeric prefab must initialize within its configured bounds")
+		return
+	number.minimum = 0
 	number.input.grab_focus()
 	number.input.select_all()
 	type_text("12")
