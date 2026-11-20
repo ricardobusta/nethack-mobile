@@ -1,0 +1,41 @@
+--- a/src/invent.c
++++ b/src/invent.c
+@@ -3323,6 +3323,11 @@
+                 add_menu(win, &tmpglyphinfo, &any, ilet,
+                          wizid ? def_oc_syms[(int) otmp->oclass].sym : 0,
+                          ATR_NONE, clr, formattedobj, MENU_ITEMFLAGS_NONE);
++#ifdef NH_MOBILE
++                    /* NetHack Mobile: changed 2026-11-20; known item data only. */
++                    { extern void nm_inventory_item(int, struct obj *);
++                      nm_inventory_item(win, otmp); }
++#endif
+             }
+             /* doname() uses a static pool of obuf[] output buffers and
+                we don't want inventory display to overwrite all of them,
+@@ -3375,6 +3380,12 @@
+                             : not_carrying_anything);
+         want_reply = FALSE;
+     }
++#ifdef NH_MOBILE
++    if (!lets && !inuse_only && !wizid) {
++        extern void nm_menu_context(int, int, struct obj *);
++        nm_menu_context(win, 1, (struct obj *) 0);
++    }
++#endif
+     end_menu(win, (query && *query) ? query : (char *) 0);
+ 
+     n = select_menu(win,
+--- a/src/iactions.c
++++ b/src/iactions.c
+@@ -287,6 +287,11 @@
+ 
+     win = create_nhwindow(NHW_MENU);
+     start_menu(win, MENU_BEHAVE_STANDARD);
++#ifdef NH_MOBILE
++    /* NetHack Mobile: changed 2026-11-20; upstream determines every action. */
++    { extern void nm_menu_context(int, int, struct obj *);
++      nm_menu_context(win, 2, otmp); }
++#endif
+ 
+     /* -: unwield; picking current weapon offers an opportunity for 'w-'
+        to wield bare/gloved hands; likewise for 'Q-' with quivered item(s) */

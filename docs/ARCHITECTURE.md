@@ -39,6 +39,14 @@ dispatch; swipes suppress item activation, coast after release, and stay within
 the content bounds. Touching a moving list stops it without activating a row.
 Mouse wheels, keyboard focus and scrollbar dragging retain Godot's behavior.
 
+The gameplay message log renders the latest message in white and previous
+messages in gray. It follows the scroll bottom after container layout and text
+wrapping finish, including rotation and text-size changes. Engine text is added
+literally rather than interpreted as markup. Informational modals block keyboard
+commands and map taps; actual engine prompts and direction/key controls retain
+their input behavior. Android Back is handled by modal navigation, with Godot's
+automatic Back-to-exit behavior disabled.
+
 The reusable scene library in `godot/ui/widgets` supplies action buttons, labeled
 text/search fields with validation, numeric steppers and full-row toggles. A shared
 theme sets typography, colors, spacing and touch sizes. Android uses a canvas in
@@ -57,6 +65,39 @@ Returning from normal app backgrounding automatically restores a successfully
 suspended session without a confirmation screen or restore greeting. Restoration
 waits for both the save to finish and the app to return to the foreground.
 Explicit Save and suspend keeps its resume controls; save failures remain visible.
+
+The additive phase event reports starting, playing, suspended, postmortem, ended
+and error. `really_done` copies the engine outcome and formatted cause before
+disclosures; neither the worker nor the UI guesses death from message text.
+Postmortem suspension is ignored on both sides of the bridge. The worker keeps
+its request ID while the UI keeps its controls and scroll position.
+
+Before publishing postmortem, the worker atomically writes `.mobile-ended` in
+the run directory. The native entry point refuses retired directories, including
+ones with old live recovery checkpoints. Starting that name again chooses a
+fresh `-run-N` directory; previous files are retained. This guard is independent
+of the UI report, so report corruption cannot enable a dead-character restore.
+
+`end_report.gd` atomically replaces a versioned UI-only JSON journal containing
+the outcome, cause, disclosed pages, last page and scroll offsets. Cold launch
+opens an undismissed report without starting an engine. Characters dismisses it;
+Last run can reopen it. Invalid/unsupported journals fall back to Characters.
+The journal is not a game save. Like upstream checkpoints, filesystem writes
+cannot guarantee recovery from arbitrary storage failure or power loss.
+
+Copied character/equipment events are refreshed at command boundaries. Menu
+glyph, known item and menu-context events augment existing menus without
+changing their indices. The item detail page renders upstream `itemactions`;
+canceling and reopening inventory consumes no turns. Numeric responses preserve
+PC `yn_number` semantics, including zero and the platform's long limit.
+
+`ui/modal_host.gd` owns a full-viewport input shield. Its panel alone receives
+safe-area, maximum-width and keyboard bounds. Resource bars are read-only
+ProgressBars. Landscape uses independently scrolling log and action sidebars at
+roughly 20% and 16% of viewport width (bounded to 130–280 and 120–200 logical
+pixels at normal text size; minimums grow with enlarged text), with remaining
+space for the map. Compact portrait combines shortcuts
+into one horizontally scrolling row to preserve the map at enlarged text sizes.
 
 Upstream checkpoints are not transactional snapshots of the entire filesystem.
 Interruption during a checkpoint or disk exhaustion still needs physical-device

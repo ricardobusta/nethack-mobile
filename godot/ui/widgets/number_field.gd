@@ -4,7 +4,7 @@ signal value_changed(value: int)
 @export var label_text := "Quantity"
 @export var helper_text := "0 means the whole stack"
 @export var minimum := 0
-@export var maximum := 1000000
+@export var maximum := 9223372036854775807
 @export var step := 1
 @export var suffix := ""
 var current := 0

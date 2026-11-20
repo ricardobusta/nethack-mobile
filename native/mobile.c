@@ -3,11 +3,13 @@
 #include "func_tab.h"
 #include "dlb.h"
 #include "mobile.h"
+#include "quantity.h"
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <unistd.h>
 
 int nhmain(int, char **);
 typedef void (*shim_callback_t)(const char *, void *, const char *, ...);
@@ -17,6 +19,7 @@ static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
 static pthread_t worker;
 static int running, joinable, stopping, suspending, answered, interrupted, suspended_saved;
 static uint64_t sequence, pending;
+static int phase;
 static nm_input answer;
 static char game_directory[4096], sysconf_file[4096], player_name[64];
 static jmp_buf termination;
@@ -82,6 +85,72 @@ static nm_event event(int type, const char *text) {
     return e;
 }
 
+static void set_phase(int value, const char *text, int outcome) {
+    pthread_mutex_lock(&mutex); phase = value;
+    if (value == NM_POSTMORTEM) suspending = 0;
+    pthread_mutex_unlock(&mutex);
+    nm_event e = event(NM_PHASE, text); e.values[0] = value; e.values[1] = outcome; push(e);
+}
+
+/* Called at the irreversible upstream game-over boundary, on the worker. */
+void nm_notify_gameover(int how, const char *cause) {
+    /* A killed postmortem worker may leave upstream recovery checkpoints.
+     * Permanently retire this directory before exposing disclosure prompts. */
+    char path[4096], temporary[4096];
+    snprintf(path, sizeof path, "%s.mobile-ended", game_directory);
+    snprintf(temporary, sizeof temporary, "%s.mobile-ended.tmp", game_directory);
+    FILE *marker = fopen(temporary, "wb");
+    if (marker) {
+        fprintf(marker, "%d\n", how); fflush(marker); fsync(fileno(marker)); fclose(marker);
+        rename(temporary, path);
+    }
+    set_phase(NM_POSTMORTEM, cause, how);
+}
+
+void nm_notify_outcome(int how, const char *cause) {
+    nm_event e = event(NM_OUTCOME, cause); e.values[0] = how; push(e);
+}
+
+static void item_payload(nm_event *e, struct obj *obj) {
+    glyph_info g;
+    map_glyphinfo(0, 0, obj_to_glyph(obj, rn2_on_display_rng), 0U, &g);
+    e->values[2] = g.gm.tileidx; e->values[3] = obj->quan;
+    e->values[4] = obj->owornmask != 0;
+    snprintf(e->text, sizeof e->text, "%s", doname(obj));
+}
+
+#ifdef NM_TEST_PRIVACY
+#include "privacy_fixture.h"
+#endif
+
+void nm_inventory_item(int win, struct obj *obj) {
+    nm_event e = event(NM_ITEM, NULL); e.values[0] = win;
+    e.values[1] = menu_count[win] - 1; item_payload(&e, obj); push(e);
+}
+
+void nm_menu_context(int win, int kind, struct obj *obj) {
+    nm_event e = event(NM_MENU_CONTEXT, NULL); e.values[0] = win; e.values[1] = kind;
+    if (obj) item_payload(&e, obj);
+    push(e);
+}
+
+static void character_snapshot(void) {
+#ifdef NM_TEST_PRIVACY
+    static int verified;
+    if (!verified) { verify_private_item_payload(); verified = 1; }
+#endif
+    nm_event e = event(NM_CHARACTER, NULL);
+    snprintf(e.text, sizeof e.text, "Name: %s\nClass: %s\nRank: %s\nRace: %s\nGender: %s\nAlignment: %s",
+        svp.plname, (flags.female && gu.urole.name.f) ? gu.urole.name.f : gu.urole.name.m,
+        rank_of(u.ulevel, Role_switch, flags.female), gu.urace.noun,
+        genders[flags.female].adj, align_str(u.ualign.type));
+    push(e);
+    e = event(NM_EQUIPMENT, NULL); e.values[0] = -1; push(e);
+    for (struct obj *obj = gi.invent; obj; obj = obj->nobj) if (obj->owornmask) {
+        e = event(NM_EQUIPMENT, NULL); item_payload(&e, obj); push(e);
+    }
+}
+
 void error(const char *format, ...) {
     nm_event e = event(NM_MESSAGE, NULL);
     va_list args; va_start(args, format);
@@ -94,7 +163,7 @@ static nm_input request(const char *kind, const char *prompt, const char *choice
     nm_event e = event(NM_PROMPT, prompt);
     e.values[0] = !strcmp(kind, "command") ? 0 : !strcmp(kind, "key") ? 1 :
                   !strcmp(kind, "yesno") ? 2 : !strcmp(kind, "text") ? 3 :
-                  !strcmp(kind, "menu") ? 4 : !strcmp(kind, "position") ? 6 : 5;
+                  !strcmp(kind, "menu") ? 4 : !strcmp(kind, "position") ? 6 : !strcmp(kind, "number") ? 7 : 5;
     e.values[1] = how; e.values[2] = window;
     if (choices) snprintf(e.text + strlen(e.text) + 1, sizeof e.text - strlen(e.text) - 1, "%s", choices);
     pthread_mutex_lock(&mutex);
@@ -142,7 +211,6 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         iflags.window_inited = TRUE;
         iflags.wc_mouse_support = 1;
         flags.travelcmd = TRUE;
-        flags.legacy = FALSE;
     } else if (!strcmp(name, "shim_get_nh_event")) {
         pthread_mutex_lock(&mutex); int cancel = interrupted || stopping || suspending; interrupted = 0; pthread_mutex_unlock(&mutex);
         if (cancel && program_state.something_worth_saving) {
@@ -198,7 +266,7 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         int w = va_arg(a, int); menu_count[w] = 0;
         e = event(NM_MENU_START, NULL); e.values[0] = w; push(e);
     } else if (!strcmp(name, "shim_add_menu")) {
-        int w = va_arg(a, int); (void)va_arg(a, const glyph_info *);
+        int w = va_arg(a, int); const glyph_info *g = va_arg(a, const glyph_info *);
         const anything *id = va_arg(a, const anything *);
         int ch = va_arg(a, int), group = va_arg(a, int), attr = va_arg(a, int), color = va_arg(a, int);
         const char *text = va_arg(a, const char *); unsigned itemflags = va_arg(a, unsigned);
@@ -211,6 +279,10 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         e = event(NM_MENU_ITEM, text); e.values[0] = w; e.values[1] = i; e.values[2] = ch;
         e.values[3] = menus[w][i].selectable; e.values[4] = itemflags; e.values[5] = group;
         e.values[6] = attr; e.values[7] = color; push(e);
+        if (g && g->glyph != NO_GLYPH) {
+            e = event(NM_MENU_GLYPH, NULL); e.values[0] = w; e.values[1] = i;
+            e.values[2] = g->gm.tileidx; e.values[3] = g->ttychar; push(e);
+        }
     } else if (!strcmp(name, "shim_end_menu")) {
         int w = va_arg(a, int); e = event(NM_MENU_END, va_arg(a, const char *)); e.values[0] = w; push(e);
     } else if (!strcmp(name, "shim_select_menu")) {
@@ -240,6 +312,8 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         int position = !strcmp(name, "shim_nh_poskey");
         int command = position && iflags.in_parse && program_state.input_state == commandInp;
         if (command && program_state.something_worth_saving && !program_state.gameover && !gm.multi && !go.occupation) {
+            if (phase != NM_PLAYING) set_phase(NM_PLAYING, NULL, -1);
+            character_snapshot();
             save_currentstate();
         }
         e = event(NM_READY, NULL); e.values[0] = u.ux; e.values[1] = u.uy; e.values[2] = svm.moves; push(e);
@@ -250,8 +324,26 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         } else *((int *)ret) = input.key ? input.key : 27;
     } else if (!strcmp(name, "shim_yn_function")) {
         const char *query = va_arg(a, const char *), *choices = va_arg(a, const char *); int def = va_arg(a, int);
-        nm_input input = request("yesno", query, choices, def, 0);
-        *((char *)ret) = input.key ? input.key : (def ? def : 27);
+        yn_number = 0;
+        for (;;) {
+            nm_input input = request("yesno", query, choices, def, 0);
+            if (choices && strchr(choices, '#') && (input.type == NM_TEXT || input.key == '#' || digit(input.key))) {
+                if (input.type != NM_TEXT) {
+                    char initial[2] = { digit(input.key) ? input.key : 0, 0 };
+                    input = request("number", "How many?", initial, 0, 0);
+                }
+                if (input.key == 27) continue; /* PC cancels the count, then re-prompts. */
+                long value;
+                if (nm_parse_quantity(input.text, &value)) {
+                    yn_number = value;
+                    *((char *)ret) = value ? '#' : 'n'; break;
+                }
+                continue;
+            }
+            int key = input.key ? input.key : (def ? def : 27);
+            key = nm_choice_key(key, choices, def);
+            if (!choices || !*choices || strchr(choices, key)) { *((char *)ret) = key; break; }
+        }
     } else if (!strcmp(name, "shim_getlin")) {
         const char *query = va_arg(a, const char *); char *buffer = va_arg(a, char *);
         nm_input input = request("text", query, NULL, 0, 0);
@@ -310,18 +402,20 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
 static void *run_engine(void *unused) {
     int code = setjmp(termination);
     if (!code) {
+        set_phase(NM_STARTING, NULL, -1);
         shim_graphics_set_callback(callback);
         char *argv[] = {"nethack-mobile", "-u", player_name, NULL};
         nhmain(3, argv);
     }
     for (int i = 0; i < 256; ++i) { free(menus[i]); menus[i] = NULL; menu_count[i] = menu_capacity[i] = 0; }
     pthread_mutex_lock(&mutex); running = 0; pending = 0; pthread_mutex_unlock(&mutex);
+    set_phase(suspended_saved ? NM_SUSPENDED : code > 1 ? NM_ERROR : NM_FINISHED, NULL, -1);
     nm_event e = event(NM_ENDED, NULL); e.values[0] = code ? code - 1 : 0; e.values[1] = suspended_saved; push(e);
     return NULL;
 }
 
 int nm_running(void) { pthread_mutex_lock(&mutex); int result = running; pthread_mutex_unlock(&mutex); return result; }
-void nm_suspend(void) { pthread_mutex_lock(&mutex); suspending = 1; pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex); }
+void nm_suspend(void) { pthread_mutex_lock(&mutex); if (phase != NM_POSTMORTEM && running) suspending = 1; pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex); }
 void nm_interrupt(void) { pthread_mutex_lock(&mutex); interrupted = 1; pthread_mutex_unlock(&mutex); }
 void nm_stop(void) {
     pthread_mutex_lock(&mutex); stopping = 1; pthread_cond_broadcast(&condition); pthread_mutex_unlock(&mutex);
@@ -329,6 +423,8 @@ void nm_stop(void) {
 }
 int nm_start(const char *directory, const char *name) {
     if (nm_running() || !directory || !name || strlen(directory) > 400 || !*name || strlen(name) > 24) return 0;
+    char ended_path[4096]; snprintf(ended_path, sizeof ended_path, "%s/.mobile-ended", directory);
+    if (access(ended_path, F_OK) == 0) return 0;
     if (!((*name >= 'A' && *name <= 'Z') || (*name >= 'a' && *name <= 'z'))) return 0;
     for (const char *p = name; *p; ++p) if (!((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '_')) return 0;
     if (joinable) { pthread_join(worker, NULL); joinable = 0; }
@@ -345,7 +441,7 @@ int nm_start(const char *directory, const char *name) {
     memset(window_type, 0, sizeof window_type);
     nm_event stale; while (nm_poll(&stale)) {}
     memset(status_names, 0, sizeof status_names); memset(status_enabled, 0, sizeof status_enabled);
-    pthread_mutex_lock(&mutex); stopping = suspending = answered = interrupted = suspended_saved = 0; pending = 0; running = 1; pthread_mutex_unlock(&mutex);
+    pthread_mutex_lock(&mutex); stopping = suspending = answered = interrupted = suspended_saved = 0; pending = 0; phase = NM_STARTING; running = 1; pthread_mutex_unlock(&mutex);
     if (pthread_create(&worker, NULL, run_engine, NULL)) { pthread_mutex_lock(&mutex); running = 0; pthread_mutex_unlock(&mutex); return 0; }
     joinable = 1; return 1;
 }

@@ -58,7 +58,7 @@ def prepare(source, workspace, data):
     header = f'{1:3d} {len(names):8d} {sum(len(n) + 1 for n in names):8d} {directory_size:8d} {offset:8d}\n'
     assert len((header + directory).encode()) == directory_size
     (data / 'nhdat').write_bytes((header + directory).encode() + content)
-    (data / 'sysconf').write_text('WIZARDS=*\nEXPLORERS=*\nOPTIONS=!legacy,autopickup,travel,!news\n')
+    (data / 'sysconf').write_text('WIZARDS=*\nEXPLORERS=*\nOPTIONS=autopickup,travel,!news\n')
     version_header = (work / 'include/patchlevel.h').read_text()
     versions = [re.search(r'^#define\s+' + key + r'\s+(\d+)', version_header, re.M).group(1) for key in ('VERSION_MAJOR', 'VERSION_MINOR', 'PATCHLEVEL', 'EDITLEVEL')]
     version = '.'.join(versions[:3])
@@ -122,10 +122,14 @@ if __name__ == '__main__':
             folder = build('host' if args.target == 'check-upstream' else args.target, work, not args.engine_only and args.target != 'check-upstream', workspace)
             if args.target in ('host', 'check-upstream'):
                 with tempfile.TemporaryDirectory(prefix='nh-smoke-') as tmp:
-                    game = Path(tmp) / 'game'
-                    shutil.copytree(data, game)
-                    (game / 'save').mkdir()
+                    def fresh_game(name):
+                        game = Path(tmp) / name
+                        shutil.copytree(data, game)
+                        (game / 'save').mkdir()
+                        return game
+                    game = fresh_game('normal')
                     call(folder / 'nh_smoke', game)
+                    game = fresh_game('crash')
                     with (workspace / 'crash-test.log').open('w') as log:
                         process = subprocess.Popen([str(folder / 'nh_smoke'), str(game), '--checkpoint'], stdout=subprocess.PIPE, stderr=log, text=True)
                         try:
@@ -138,5 +142,18 @@ if __name__ == '__main__':
                             process.wait()
                     call(folder / 'nh_smoke', game)
                     print('Process-death checkpoint recovery passed.')
-                    call(folder / 'nh_smoke', game, '--save-failure')
+                    call(folder / 'nh_smoke', fresh_game('save-failure'), '--save-failure')
                     print('Save-failure reporting and recovery passed.')
+                    call(folder / 'nh_smoke', fresh_game('death'), '--death')
+                    dead = fresh_game('killed-postmortem')
+                    with (workspace / 'death-crash-test.log').open('w') as log:
+                        process = subprocess.Popen([str(folder / 'nh_smoke'), str(dead), '--death-checkpoint'], stdout=subprocess.PIPE, stderr=log, text=True)
+                        try:
+                            with selectors.DefaultSelector() as ready:
+                                ready.register(process.stdout, selectors.EVENT_READ)
+                                if not ready.select(120) or process.stdout.readline().strip() != 'DEATH_CHECKPOINT_READY':
+                                    raise RuntimeError('Death test did not reach disclosures')
+                        finally:
+                            process.kill()
+                            process.wait()
+                    call(folder / 'nh_smoke', dead, '--retired')

@@ -1,4 +1,8 @@
 #include "mobile.h"
+#include "quantity.h"
+#include <limits.h>
+#undef NDEBUG
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,23 +12,50 @@
 extern int total_tiles_used;
 
 int main(int argc, char **argv) {
+    long numeric; char maximum[64]; snprintf(maximum, sizeof maximum, "%ld", LONG_MAX);
+    assert(nm_parse_quantity("0", &numeric) && numeric == 0);
+    assert(nm_parse_quantity("42", &numeric) && numeric == 42);
+    assert(nm_parse_quantity(maximum, &numeric) && numeric == LONG_MAX);
+    assert(!nm_parse_quantity("999999999999999999999999", &numeric));
+    assert(!nm_parse_quantity("-1", &numeric) && !nm_parse_quantity("2x", &numeric));
+    assert(!nm_parse_quantity("", &numeric) && !nm_parse_quantity("1.5", &numeric));
+    assert(nm_choice_key(27, "ynq", 'y') == 'q');
+    assert(nm_choice_key(27, "yn", 'y') == 'n');
+    assert(nm_choice_key(27, "abc", 'b') == 'b');
+    assert(nm_choice_key(13, "yn", 'y') == 'y');
+    assert(nm_choice_key('Y', "yn", 'n') == 'y');
+    assert(nm_choice_key('N', "ynNaq", 'n') == 'N');
+    assert(nm_choice_key('Y', NULL, 0) == 'Y');
     if (argc < 2 || argc > 3) return 2;
+    if (argc == 3 && !strcmp(argv[2], "--retired")) {
+        if (nm_start(argv[1], "MobileTest")) { nm_stop(); return 15; }
+        puts("Retired postmortem directory refused: no dead restore."); return 0;
+    }
     int first[256], commands = 0, maps = 0, restored = 0, ended = 0, tile_types = 0, tiles[4096] = {0};
-    int restore_messages = 0;
+    int restore_messages = 0, postmortem = 0, postmortem_prompts = 0, normalized_outcome = 0;
     int64_t latest_turn = 0, inventory_turn = 0;
+    int death_checkpoint = argc == 3 && !strcmp(argv[2], "--death-checkpoint");
+    int death_test = death_checkpoint || (argc == 3 && !strcmp(argv[2], "--death"));
     int checkpoint = argc == 3 && !strcmp(argv[2], "--checkpoint");
     int save_failure = argc == 3 && !strcmp(argv[2], "--save-failure");
     int failure_reported = 0;
     char save_directory[4096]; snprintf(save_directory, sizeof save_directory, "%s/save", argv[1]);
     for (int i = 0; i < 256; ++i) first[i] = -1;
     if (!nm_start(argv[1], "MobileTest")) return 3;
-    time_t deadline = time(NULL) + 60;
+    time_t deadline = time(NULL) + (death_test ? 120 : 60);
     while (time(NULL) < deadline) {
         nm_event e;
         if (!nm_poll(&e)) { usleep(1000); continue; }
         if (e.type == NM_MESSAGE && (getenv("NH_SMOKE_VERBOSE") || strstr(e.text, "error") || strstr(e.text, "Cannot") || strstr(e.text, "Program in disorder"))) fprintf(stderr, "engine: %s\n", e.text);
         if (e.type == NM_MESSAGE && strstr(e.text, "Restoring save file")) ++restore_messages;
         if (e.type == NM_MESSAGE && strstr(e.text, "Save failed.")) failure_reported = 1;
+        if (e.type == NM_OUTCOME) {
+            normalized_outcome = 1;
+            if (!*e.text || (e.values[0] == 13 && strcmp(e.text, "quit"))) {
+                fprintf(stderr, "Incorrect normalized outcome: %s\n", e.text); nm_stop(); return 16;
+            }
+        }
+        if (e.type == NM_PHASE && e.values[0] == NM_POSTMORTEM) { postmortem = 1; nm_suspend(); }
         if (e.type == NM_READY) latest_turn = e.values[2];
         if (e.type == NM_GLYPH) {
             ++maps;
@@ -34,10 +65,19 @@ int main(int argc, char **argv) {
         if (e.type == NM_MENU_START) first[e.values[0]] = -1;
         if (e.type == NM_MENU_ITEM && e.values[3] && (first[e.values[0]] < 0 || strstr(e.text, "No, just start play"))) first[e.values[0]] = e.values[1];
         if (e.type == NM_PROMPT) {
+
+            if (postmortem) {
+                nm_suspend(); usleep(10000); ++postmortem_prompts;
+                if (death_checkpoint) {
+                    puts("DEATH_CHECKPOINT_READY"); fflush(stdout);
+                    for (;;) pause();
+                }
+            }
             nm_input input = {0}; input.request = e.request; input.type = NM_KEY; input.key = ' ';
             switch (e.values[0]) {
             case 0:
                 ++commands;
+                if (death_test) { input.key = (commands % 2) ? 'm' : '.'; break; }
                 if (commands == 1) inventory_turn = latest_turn;
                 else if (latest_turn != inventory_turn) {
                     fprintf(stderr, "Inventory browsing consumed a game turn\n"); nm_stop(); return 10;
@@ -82,6 +122,12 @@ int main(int argc, char **argv) {
         if (e.type == NM_ENDED) {
             if (getenv("NH_SMOKE_VERBOSE")) fprintf(stderr, "Session ended: status=%lld saved=%lld commands=%d\n", e.values[0], e.values[1], commands);
             ++ended;
+            if (death_test) {
+                nm_stop();
+                int success = normalized_outcome && postmortem && postmortem_prompts > 0 && !e.values[1] && !nm_start(argv[1], "MobileTest");
+                printf("Death disclosure background test: %d command inputs, %d prompts, no dead save; %s.\n", commands, postmortem_prompts, success ? "passed" : "FAILED");
+                return success ? 0 : 14;
+            }
             if (!restored) {
                 if (save_failure) {
                     chmod(save_directory, 0700);
@@ -91,7 +137,7 @@ int main(int argc, char **argv) {
                 if (!nm_start(argv[1], "MobileTest")) return 6;
             } else {
                 nm_stop();
-                int success = maps > 100 && commands >= 265 && tile_types >= 5 && restore_messages >= 1;
+                int success = normalized_outcome && postmortem && postmortem_prompts > 0 && e.values[1] == 0 && maps > 100 && commands >= 265 && tile_types >= 5 && restore_messages >= 1;
                 printf("Native smoke: %d map events, %d command boundaries, %d sessions; %s.\n", maps, commands, ended, success ? "passed" : "FAILED");
                 return success ? 0 : 7;
             }

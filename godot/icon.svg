@@ -1,9 +1,37 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
- <rect width="512" height="512" rx="104" fill="#101925"/>
- <path d="M114 116h284v280H114z" fill="none" stroke="#52677c" stroke-width="14"/>
- <path d="M114 186h70v70h-70m284 70h-70v70" fill="none" stroke="#52677c" stroke-width="14"/>
- <g fill="none" stroke="#e7c66b" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M323 323c-18 21-43 33-74 33-62 0-107-43-107-104 0-65 47-109 111-109 61 0 105 41 105 99v39c0 23-13 36-31 36-18 0-29-12-29-33v-84"/>
-  <ellipse cx="253" cy="253" rx="43" ry="48"/>
+ <defs>
+  <linearGradient id="metal" x1="0" y1="0" x2="1" y2="0.8">
+   <stop offset="0" stop-color="#f5f8f3"/>
+   <stop offset="0.45" stop-color="#dce5df"/>
+   <stop offset="1" stop-color="#9eafaa"/>
+  </linearGradient>
+  <linearGradient id="teal" x1="0" y1="0" x2="0" y2="1">
+   <stop offset="0" stop-color="#008d87"/>
+   <stop offset="1" stop-color="#00736d"/>
+  </linearGradient>
+ </defs>
+ <rect width="512" height="512" rx="104" fill="#182326"/>
+ <g stroke-linejoin="round" stroke-linecap="round">
+  <g transform="rotate(-41 256 256)">
+   <path d="M256 82v350" stroke="#0c1719" stroke-width="28"/>
+   <path d="M256 82v350" stroke="url(#metal)" stroke-width="18"/>
+   <path d="M256 155v256" stroke="#006b65" stroke-width="8"/>
+   <path d="M256 40 280 79 318 50 322 116 293 154 256 138 219 154 190 116 194 50 232 79Z" fill="#007b75" stroke="url(#metal)" stroke-width="10"/>
+   <path d="M238 374h36l18 39-10 32h-52l-10-32Z" fill="#007b75" stroke="url(#metal)" stroke-width="8"/>
+  </g>
+  <g transform="rotate(41 256 256)">
+   <path d="M256 82v350" stroke="#0c1719" stroke-width="28"/>
+   <path d="M256 82v350" stroke="url(#metal)" stroke-width="18"/>
+   <path d="M256 155v256" stroke="#006b65" stroke-width="8"/>
+   <path d="M256 40 280 79 318 50 322 116 293 154 256 138 219 154 190 116 194 50 232 79Z" fill="#00605c" stroke="url(#metal)" stroke-width="10"/>
+   <path d="M238 374h36l18 39-10 32h-52l-10-32Z" fill="#00605c" stroke="url(#metal)" stroke-width="8"/>
+  </g>
+  <path d="M118 128h276q12 0 12 12v142c0 48-60 110-150 176-90-66-150-128-150-176V140q0-12 12-12Z" fill="url(#teal)" stroke="#0c1719" stroke-width="24"/>
+  <path d="M256 128h138q12 0 12 12v142c0 48-60 110-150 176Z" fill="#00524f"/>
+  <path d="M118 128h276q12 0 12 12v142c0 48-60 110-150 176-90-66-150-128-150-176V140q0-12 12-12Z" fill="none" stroke="url(#metal)" stroke-width="14"/>
+  <g transform="translate(32 30) scale(0.88)" fill="none" stroke="#f5f8ed" stroke-width="20">
+   <path d="M323 323c-18 21-43 33-74 33-62 0-107-43-107-104 0-65 47-109 111-109 61 0 105 41 105 99v39c0 23-13 36-31 36-18 0-29-12-29-33v-84"/>
+   <ellipse cx="253" cy="253" rx="43" ry="48"/>
+  </g>
  </g>
 </svg>

@@ -1,0 +1,36 @@
+--- a/src/end.c
++++ b/src/end.c
+@@ -1142,6 +1142,15 @@
+      *  The game is now over...
+      */
+     program_state.gameover = 1;
++#ifdef NH_MOBILE
++    /* NetHack Mobile: changed 2026-11-20; retire the irreversible run. */
++    {
++        extern void nm_notify_gameover(int, const char *);
++        char mobile_cause[BUFSZ];
++        formatkiller(mobile_cause, sizeof mobile_cause, how, TRUE);
++        nm_notify_gameover(how, mobile_cause);
++    }
++#endif
+     /* in case of a subsequent panic(), there's no point trying to save */
+     program_state.something_worth_saving = 0;
+ #ifdef HANGUPHANDLING
+@@ -1230,6 +1239,15 @@
+         svk.killer.format = NO_KILLER_PREFIX;
+-
++
+     fixup_death(how); /* actually, fixup gm.multi_reason */
++#ifdef NH_MOBILE
++    /* Copy the normalized outcome, including quit-on-Charon's-boat. */
++    {
++        extern void nm_notify_outcome(int, const char *);
++        char mobile_cause[BUFSZ];
++        formatkiller(mobile_cause, sizeof mobile_cause, how, TRUE);
++        nm_notify_outcome(how, *mobile_cause ? mobile_cause : deaths[how]);
++    }
++#endif
+-
++
+     if (how != PANICKED) {
+         boolean silently = done_stopprint ? TRUE : FALSE;

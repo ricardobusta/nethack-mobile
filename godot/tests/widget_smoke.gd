@@ -44,9 +44,18 @@ func run() -> void:
 		quit(1)
 		return
 	root.add_child(app)
+	app.status_fields = {18: "HP: 7", 19: "HP max: 23", 11: "Power: 0", 12: "Power max: 0", 17: "Hunger: Hungry", 22: "Blind, Stunned"}
+	app._update_resources()
+	assert(app.hp_bar.caption.text == "♥ 7/23")
+	assert(app.power_bar.caption.text == "✦ 0/0" and app.power_bar.fill.value == 0)
+	assert(app.badges.get_child_count() == 3)
+	app.status_fields[18] = "HP: 45" # Polymorph uses the engine's active HP fields.
+	app.status_fields[19] = "HP max: 62"
+	app._update_resources()
+	assert(app.hp_bar.caption.text == "♥ 45/62")
 	original_scale = app.ui_scale
 	app._change_scale(1.0 - app.ui_scale)
-	for dimensions in [Vector2i(320, 640), Vector2i(411, 914), Vector2i(914, 411), Vector2i(1200, 800)]:
+	for dimensions in [Vector2i(320, 640), Vector2i(411, 914), Vector2i(914, 411), Vector2i(1200, 800), Vector2i(800, 1200)]:
 		root.size = dimensions
 		app.overlay.hide()
 		app.status.text = "Adventurer the Candidate\nHP 14/14 · Pw 5/5 · AC 4 · XL 1\nSt 16 Dx 17 Co 11 In 10 Wi 10 Ch 11 · Lawful"
@@ -59,7 +68,7 @@ func run() -> void:
 			return
 		app._show_home()
 		await settle()
-		if app.overlay.size.x > minf(dimensions.x - 30, 642) or app.name_widget.input.get_theme_font_size("font_size") < 16 or app.name_widget.input.size.y < 48:
+		if app.overlay.content_panel.size.x > minf(dimensions.x - 30, 642) or app.overlay.size != Vector2(dimensions) or app.name_widget.input.get_theme_font_size("font_size") < 16 or app.name_widget.input.size.y < 48:
 			fail("Form width, readable text or touch sizing failed at %s" % dimensions)
 			return
 		await capture("home-%dx%d" % [dimensions.x, dimensions.y])
@@ -162,10 +171,16 @@ func run() -> void:
 	if same_field.input.size.y < 80 or same_field.input.get_theme_font_size("font_size") < 26:
 		fail("An existing field did not respond to a theme size change")
 		return
-	for dimensions in [Vector2i(320, 640), Vector2i(914, 411)]:
+	for dimensions in [Vector2i(320, 640), Vector2i(914, 411), Vector2i(1200, 800), Vector2i(800, 1200)]:
 		root.size = dimensions
 		app.overlay.hide()
+		app.status_fields[18] = "HP: 250"
+		app.status_fields[19] = "HP max: 300"
+		app._update_resources()
 		await settle()
+		var caption: Label = app.hp_bar.caption
+		var width := caption.get_theme_font("font").get_string_size(caption.text, HORIZONTAL_ALIGNMENT_LEFT, -1, caption.get_theme_font_size("font_size")).x
+		assert(not caption.clip_text and (width <= caption.size.x or caption.get_line_count() > 1))
 		if app.page.get_global_rect().end.y > dimensions.y or app.map.size.y < 80:
 			fail("Large-text game controls escaped the screen at %s" % dimensions)
 			return
@@ -193,6 +208,27 @@ func run() -> void:
 		fail("Existing prefabs did not scale with the shared theme")
 		return
 	await capture("large-text")
+	var host := preload("res://ui/modal_host.gd").new()
+	host.theme = app.theme
+	root.add_child(host)
+	var box := VBoxContainer.new()
+	host.content_panel.add_child(box)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(scroll)
+	var keyboard_field := NumberField.instantiate()
+	scroll.add_child(keyboard_field)
+	var back := Button.new()
+	back.text = "Back"
+	back.custom_minimum_size.y = 84
+	box.add_child(back)
+	host.constrain(40, 36, 24, 300) # Cutout plus software-keyboard exclusion.
+	await settle()
+	assert(host.get_global_rect() == Rect2(Vector2.ZERO, Vector2(root.size)))
+	assert(host.get_child(0).size == Vector2(root.size))
+	assert(host.content_panel.position.x >= 40 and host.content_panel.position.y >= 36)
+	assert(back.get_global_rect().end.y <= root.size.y - 300)
+	host.free()
 	app._change_scale(original_scale - app.ui_scale)
 	print("Mobile widgets passed: density scaling, phone/tablet layouts, text entry, inline errors, quantity controls and shared text scaling.")
 	quit(0)
