@@ -1,5 +1,28 @@
 # Release preparation and acceptance
 
+## Versioning requested APKs
+
+Every APK explicitly requested by the user is a new version unless the user
+marks it as testing-only. Increment the patch version (for example, 0.1.0 to
+0.1.1) and increase Android's integer version code. This applies to requested
+debug-signed APKs too; it does not authorize store publication.
+
+Internal verification builds and explicitly testing-only APKs keep their
+version. Rebuilding after a failed export or retrying the same requested
+version does not cause another increment. A later request for a new APK does.
+
+Before building a new version:
+
+1. Update `config/version` in `godot/project.godot`, `version/name` and
+   `version/code` in both presets in `godot/export_presets.cfg`, `port_version`
+   in `scripts/build.py`, and the version displayed by `godot/scripts/main.gd`.
+2. Add a dated entry to `CHANGELOG.md` describing changes since the previous
+   version, including relevant fixes, features, and verification results.
+3. Commit the version and changelog milestone, then regenerate build metadata
+   and export the APK from that commit using the steps below.
+4. Verify that the APK's version name, version code, and embedded source
+   revision match the committed metadata.
+
 ## Build artifacts
 
 Use the pinned Godot 4.7.1 editor and export templates, godot-cpp 10.0.0 targeting
