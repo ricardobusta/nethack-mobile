@@ -6,6 +6,7 @@ portrait and landscape, classic ASCII and upstream tiles.
 
 This repository is a working port under development, not a published store
 release. See [release acceptance](docs/RELEASE.md) for remaining device checks.
+See the [changelog](CHANGELOG.md) for changes in the current preview.
 
 ## Build and run
 
