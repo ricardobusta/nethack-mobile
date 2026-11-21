@@ -1,21 +1,30 @@
 # Changelog
 
-## 0.1.0 — Android preview — 2026-11-21
+These unpublished Android previews use NetHack 5.0.0 and Godot 4.7.1.
+Entries identify individual builds while the app version remains 0.1.0.
 
-This preview uses NetHack 5.0.0 and Godot 4.7.1. It is an unpublished test
-build for Android phones and tablets.
+## 0.1.0 — Camera controls — 2026-11-21
 
-### Gameplay and camera
+Commit: [`7a7416b`](https://github.com/ricardobusta/nethack-mobile/commit/7a7416b).
 
-- Play the original NetHack engine with ASCII or upstream tile graphics.
-- Use touch movement, travel, targeting, a direction pad, virtual keys, and
-  a searchable command browser with customizable action shortcuts.
+### Changes
+
 - Automatically center the player when entering another floor or dungeon
   branch, including when camera following is disabled.
 - Use the saved **Follow: On/Off** toggle to center on every player move.
   With Follow on, manual panning lasts until the next move.
 - Use **Center** to recenter once without changing Follow. Centering keeps
   the current zoom; targeting and ordinary redraws preserve a panned view.
+
+### Verification
+
+- Native host checks and all nine Godot UI regressions pass.
+- The rebuilt debug APK passed signature and alignment checks and was
+  installed and launched on the Android emulator.
+
+## 0.1.0 — Mobile HUD and postmortem flow — 2026-11-20
+
+Commit: [`a922853`](https://github.com/ricardobusta/nethack-mobile/commit/a922853).
 
 ### Mobile interface
 
@@ -27,9 +36,8 @@ build for Android phones and tablets.
   names. Item details use the engine's available actions and discovery rules.
 - Support inventory quantities and multiple selections, with nested Back
   navigation and no turns spent browsing information.
-- Scale reusable touch controls and readable text for phone and tablet
-  resolutions, enlarged text, safe areas, and software keyboards.
-- Drag scrollable lists directly over their text and controls.
+- Add reusable resource bars, a message log, and a modal host that work with
+  the existing scalable mobile controls.
 - Fill the viewport with modal backdrops while keeping content within the
   usable area.
 - Arrange landscape gameplay as **log | map | actions**, with independently
@@ -41,7 +49,8 @@ build for Android phones and tablets.
 
 ### Session reliability and PC flow
 
-- Resume living games immediately and silently after backgrounding.
+- Preserve immediate, silent resume for living games while treating
+  postmortem sessions separately.
 - Preserve pending death disclosures, report pages, and scroll position
   across backgrounding without attempting to save the dead character.
 - Keep a versioned, atomic, read-only **Last run** report that can reopen
@@ -50,14 +59,15 @@ build for Android phones and tablets.
   after death.
 - Retain upstream character confirmation, introductions, tutorial choices,
   item actions, numeric answers, and postmortem disclosure choices.
-- Include checkpoint recovery, stale-input rejection, and save-failure
-  reporting.
+- Add engine lifecycle, outcome, character, equipment, and item metadata
+  events while preserving worker-thread access and stale-input rejection.
 
 ### Verification and availability
 
-- Native host checks and all nine Godot UI regressions pass.
-- The latest debug APK passed signature and alignment checks and was
-  installed and launched on the Android emulator.
+- Native checks and eight Godot UI regressions cover death disclosures,
+  report recovery, resources, item privacy, quantities, and navigation.
+- Compare the port with the vendored NetHack 5.0.0 PC flow and document
+  Android emulator checks for phone/tablet layouts and postmortem behavior.
 - Physical-device acceptance remains pending. iOS builds are deferred.
 
 See [mobile validation](docs/MOBILE_VALIDATION.md) and the
