@@ -7,9 +7,13 @@ marks it as testing-only. Increment the patch version (for example, 0.1.0 to
 0.1.1) and increase Android's integer version code. This applies to requested
 debug-signed APKs too; it does not authorize store publication.
 
-Internal verification builds and explicitly testing-only APKs keep their
-version. Rebuilding after a failed export or retrying the same requested
-version does not cause another increment. A later request for a new APK does.
+Builds the agent initiates to check behavior, debug an issue, or verify changes
+are internal test builds: do not bump any version or add a changelog entry for
+them. Explicitly testing-only APKs follow the same rule. Debug signing alone
+does not determine whether a build is internal or user-requested.
+
+Rebuilding after a failed export or retrying the same requested version does
+not cause another increment or entry. A later request for a new APK does.
 
 Before building a new version:
 
