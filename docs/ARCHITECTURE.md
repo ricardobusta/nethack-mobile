@@ -32,6 +32,14 @@ is reconstructed by the frontend. Travel, adjacent interaction, targeting,
 inventory, and command availability come from the engine. UI gestures cannot
 send taps for undisplayed/unexplored cells.
 
+READY events copy the engine's dungeon and level identifiers with a validity
+flag. The map recenters on a new session or changed level identity, including
+stairs, portals and branch changes at the same depth; ordinary map redraws
+preserve its view. Center is one-shot. The saved Follow toggle centers on player
+movement, while allowing temporary panning until the next move. Targeting cursors
+and repeated player-position events do not undo a pan. Centering aligns the
+player tile's center with the viewport center and preserves zoom.
+
 All UI scroll areas share `mobile_scroll.gd`. Touch gestures belong to the
 scroll area before its children receive input, so dragging buttons, text fields,
 quantity controls or labels moves the whole list. Stationary taps use normal GUI

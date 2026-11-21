@@ -12,6 +12,7 @@ enum nm_event_type {
 enum nm_phase { NM_STARTING, NM_PLAYING, NM_SUSPENDED, NM_POSTMORTEM, NM_FINISHED, NM_ERROR };
 enum nm_input_type { NM_KEY = 1, NM_POSITION, NM_TEXT, NM_MENU, NM_EXTENDED };
 /* Additive payloads (v = values):
+ * READY: v[0..2] player x/y/turn, v[3..4] dungeon/level, v[5] level valid.
  * PHASE: v[0] phase, v[1] initial outcome, text initial cause.
  * OUTCOME: v[0] normalized upstream game_end_types, text final cause.
  * CHARACTER: text known identity fields; EQUIPMENT: v[0]=-1 resets, else

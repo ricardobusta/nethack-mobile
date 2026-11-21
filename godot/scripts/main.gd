@@ -79,6 +79,7 @@ var badges: HFlowContainer
 var side_actions: ScrollContainer
 var side_actions_box: VBoxContainer
 var navigation: BoxContainer
+var follow_camera_button: Button
 var name_widget: VBoxContainer
 
 func _ready() -> void:
@@ -200,6 +201,7 @@ func _build_ui() -> void:
 	map.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map.custom_minimum_size.y = 160
 	map.tiled = bool(settings.get_value("ui", "tiles", true))
+	map.set_follow_player(bool(settings.get_value("ui", "follow_player", true)))
 	(header.get_node("Mode") as Button).text = "Tiles" if map.tiled else "ASCII"
 	map.tile_pressed.connect(_tile_pressed)
 	body.add_child(map)
@@ -225,6 +227,9 @@ func _build_ui() -> void:
 	_button("Keys", _show_keyboard, navigation)
 	_button("Stop", func(): _send_key(27), navigation, true)
 	_button("Center", func(): map.recenter(), navigation, true)
+	follow_camera_button = _button("Follow: On", func(): _set_camera_follow(follow_camera_button.button_pressed), navigation)
+	follow_camera_button.toggle_mode = true
+	_refresh_camera_follow()
 	for button in navigation.get_children():
 		button.autowrap_mode = TextServer.AUTOWRAP_OFF
 	side_actions = MobileScroll.new()
@@ -250,6 +255,17 @@ func _horizontal_strip(parent: Node) -> ScrollContainer:
 	strip.follow_focus = true
 	parent.add_child(strip)
 	return strip
+
+func _refresh_camera_follow() -> void:
+	follow_camera_button.set_pressed_no_signal(map.follow_player)
+	follow_camera_button.text = "Follow: On" if map.follow_player else "Follow: Off"
+	follow_camera_button.tooltip_text = "Follow the player on every move. Panning lasts until the next move."
+
+func _set_camera_follow(enabled: bool) -> void:
+	map.set_follow_player(enabled)
+	_refresh_camera_follow()
+	settings.set_value("ui", "follow_player", enabled)
+	settings.save("user://settings.cfg")
 
 func _layout() -> void:
 	_configure_display()
@@ -453,7 +469,7 @@ func _start(name_text: String, allow_new_version := false, silently := false) ->
 	current_name = name_text
 	settings.set_value("game", "last_name", current_name)
 	settings.save("user://settings.cfg")
-	map.clear_map()
+	map.reset_session()
 	character_snapshot = ""
 	equipment.clear()
 	menu_context.clear()
@@ -670,7 +686,8 @@ func _handle_event(e: Dictionary) -> void:
 				EndReport.write_report(end_report)
 		14:
 			current_turn = int(v[2])
-			map.set_player(Vector2i(v[0], v[1]))
+			var level := Vector2i(v[3], v[4]) if v.size() >= 6 and int(v[5]) == 1 else MapView.UNKNOWN_LEVEL
+			map.set_player(Vector2i(v[0], v[1]), level)
 			dirty_ui = true
 
 func _capture_postmortem(prompt: Dictionary) -> void:
@@ -1067,7 +1084,7 @@ func _customize_actions() -> void:
 	_button("Done", _show_settings, overlay_box)
 
 func _show_about() -> void:
-	_show_text("NetHack Mobile 0.1.0 · NetHack %s\n\nUnofficial Android port. Free, offline, and open source.\n\nTap a known destination to use NetHack travel. Adjacent taps use the game's movement and interactions. Stop cancels travel. Drag to pan, pinch to zoom, Center to follow your character.\n\nUse Commands for all game actions, Direction for precise movement or targeting, and Keys for prefixes, modifiers and unusual inputs. A quantity of 0 in item menus means the whole stack.\n\nGames save automatically at safe input boundaries for crash recovery. Use Save and suspend before leaving. Death follows standard NetHack rules.\n\nSource and release archives:\n%s\n\nGodot and godot-cpp: MIT. Lua: MIT. Upstream tiles retain their notices.\n\n%s\n\n%s" % [engine_version, SOURCE_URL, FileAccess.get_file_as_string("res://data/NOTICE"), FileAccess.get_file_as_string("res://data/NETHACK_LICENSE")])
+	_show_text("NetHack Mobile 0.1.0 · NetHack %s\n\nUnofficial Android port. Free, offline, and open source.\n\nTap a known destination to use NetHack travel. Adjacent taps use the game's movement and interactions. Stop cancels travel. Drag to pan and pinch to zoom. Center recenters once; Follow switches automatic centering on every move on or off. Floor changes always recenter the map.\n\nUse Commands for all game actions, Direction for precise movement or targeting, and Keys for prefixes, modifiers and unusual inputs. A quantity of 0 in item menus means the whole stack.\n\nGames save automatically at safe input boundaries for crash recovery. Use Save and suspend before leaving. Death follows standard NetHack rules.\n\nSource and release archives:\n%s\n\nGodot and godot-cpp: MIT. Lua: MIT. Upstream tiles retain their notices.\n\n%s\n\n%s" % [engine_version, SOURCE_URL, FileAccess.get_file_as_string("res://data/NOTICE"), FileAccess.get_file_as_string("res://data/NETHACK_LICENSE")])
 	_button("Open source releases", func(): OS.shell_open(SOURCE_URL + "/releases"), overlay_box)
 
 func _show_licenses() -> void:

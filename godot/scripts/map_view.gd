@@ -1,6 +1,7 @@
 extends Control
 
 signal tile_pressed(cell: Vector2i)
+const UNKNOWN_LEVEL := Vector2i(-1, -1)
 const COLORS := [Color("18202c"), Color("d65b66"), Color("70b987"), Color("b88d58"), Color("719ad6"), Color("bb82d6"), Color("6bbfcb"), Color("c5cbd4"), Color("788494"), Color("ff8590"), Color("9fdb9e"), Color("ffe08c"), Color("a2c2ff"), Color("e4afff"), Color("a2e8ee"), Color("ffffff")]
 var cells: Dictionary = {}
 var player := Vector2i(40, 10)
@@ -15,6 +16,8 @@ var last_position := Vector2.ZERO
 var dragged := false
 var pinch_distance := 0.0
 var follow_player := true
+var current_level := UNKNOWN_LEVEL
+var center_on_next_position := true
 
 func _ready() -> void:
 	clip_contents = true
@@ -25,22 +28,39 @@ func _ready() -> void:
 
 func clear_map() -> void:
 	cells.clear()
+	cursor = Vector2i(-1, -1)
 	queue_redraw()
+
+func reset_session() -> void:
+	current_level = UNKNOWN_LEVEL
+	center_on_next_position = true
+	clear_map()
 
 func update_cell(v: PackedInt64Array) -> void:
 	cells[Vector2i(v[0], v[1])] = {"char": v[2], "color": v[3], "tile": v[4], "flags": v[5]}
 	queue_redraw()
 
-func set_player(position: Vector2i) -> void:
+func set_player(position: Vector2i, level := UNKNOWN_LEVEL) -> void:
+	if position.x < 1 or position.x >= 80 or position.y < 0 or position.y >= 21:
+		return
+	var moved := player != position
+	var changed_level := level != UNKNOWN_LEVEL and level != current_level
+	if level != UNKNOWN_LEVEL:
+		current_level = level
 	player = position
-	if follow_player:
-		camera = Vector2(player)
+	if center_on_next_position or changed_level or (follow_player and moved):
+		recenter()
+	center_on_next_position = false
 	queue_redraw()
 
 func recenter() -> void:
-	follow_player = true
-	camera = Vector2(player)
+	camera = Vector2(player) + Vector2(0.5, 0.5)
 	queue_redraw()
+
+func set_follow_player(enabled: bool) -> void:
+	follow_player = enabled
+	if enabled:
+		recenter()
 
 func zoom(factor: float) -> void:
 	cell_size = clampf(cell_size * factor, 16.0, 80.0)
@@ -109,7 +129,6 @@ func _gui_input(event: InputEvent) -> void:
 			pinch_distance = distance
 		elif event.position.distance_to(drag_start) > 12 or dragged:
 			dragged = true
-			follow_player = false
 			camera -= event.relative / cell_size
 			queue_redraw()
 		accept_event()
@@ -129,7 +148,6 @@ func _gui_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		if event.position.distance_to(drag_start) > 12 or dragged:
 			dragged = true
-			follow_player = false
 			camera -= event.relative / cell_size
 			queue_redraw()
 		accept_event()

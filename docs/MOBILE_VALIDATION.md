@@ -27,6 +27,7 @@ their completion messages, and fails on script errors even when Godot exits zero
 | Browsing and Back | Native inventory stress and the character UI test verify unchanged turn counts while browsing. Real Android Back was checked from details to Inventory and Inventory to gameplay. Automatic Back-to-exit is disabled. |
 | Touch scrolling | `scroll_smoke.gd` checks dragging over controls/text, inertia, boundaries, stopping a fling, stationary taps and horizontal shortcuts. Landscape log/actions have separate scroll owners. |
 | Wrapped log text | `log_smoke.gd` checks latest-white/previous-gray rendering, literal engine text, and bottom following after wrapping at phone/tablet sizes and 100%/150% text. |
+| Camera behavior | `camera_smoke.gd` checks floor/branch changes with Follow off, one-shot Center, saved Follow controls, touch/mouse panning, unchanged-position events, zoom retention and centered tile targeting. Native smoke checks copied level identity at live command boundaries. |
 | Modal bounds | Widget tests cover phone/tablet portrait/landscape, enlarged text, full-viewport backdrop, constrained content, and simulated cutout/keyboard exclusions. Informational modals reject stray gameplay keys and map taps. |
 | Silent living-game resume | `ui_smoke.gd` checks both save-before-foreground and foreground-before-save orderings, with no confirmation screen or restore greeting. It also checks bundled-asset refresh preserves saved games. |
 

@@ -48,8 +48,11 @@ Both Gradle export presets set minimum SDK 26 and target SDK 36.
 ## Play
 
 Tap an adjacent cell to move/interact; tap a known distant destination to
-use NetHack travel. Drag to pan and pinch to zoom. **Center** follows the
-character again. **Stop** cancels input or interrupts travel/repeated actions.
+use NetHack travel. Drag to pan and pinch to zoom. **Center** recenters once;
+**Follow: On/Off** controls automatic centering on movement and remembers your
+choice. With Follow on, panning lasts until the next move. Entering another
+floor or dungeon branch always recenters, even with Follow off.
+**Stop** cancels input or interrupts travel/repeated actions.
 
 Use the bottom action bar for common actions, **Commands** for the complete
 searchable command list, **Direction** for precise directions, and **Keys**

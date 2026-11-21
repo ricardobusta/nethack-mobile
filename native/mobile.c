@@ -261,7 +261,9 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
         e = event(NM_CURSOR, NULL); e.values[0] = x; e.values[1] = y; e.values[2] = w; push(e);
     } else if (!strcmp(name, "shim_cliparound")) {
         int x = va_arg(a, int), y = va_arg(a, int);
-        e = event(NM_CURSOR, NULL); e.values[0] = x; e.values[1] = y; e.values[3] = 1; push(e);
+        e = event(NM_CURSOR, NULL); e.values[0] = x; e.values[1] = y;
+        /* getpos also clips around its targeting cursor, not just the hero. */
+        e.values[3] = x == u.ux && y == u.uy; push(e);
     } else if (!strcmp(name, "shim_start_menu")) {
         int w = va_arg(a, int); menu_count[w] = 0;
         e = event(NM_MENU_START, NULL); e.values[0] = w; push(e);
@@ -316,7 +318,10 @@ static void callback(const char *name, void *ret, const char *fmt, ...) {
             character_snapshot();
             save_currentstate();
         }
-        e = event(NM_READY, NULL); e.values[0] = u.ux; e.values[1] = u.uy; e.values[2] = svm.moves; push(e);
+        e = event(NM_READY, NULL); e.values[0] = u.ux; e.values[1] = u.uy; e.values[2] = svm.moves;
+        e.values[3] = u.uz.dnum; e.values[4] = u.uz.dlevel;
+        e.values[5] = program_state.something_worth_saving && !program_state.gameover && u.uz.dlevel > 0;
+        push(e);
         nm_input input = request(command ? "command" : position ? "position" : "key", command ? "Your move" : position ? "Choose a map target, direction, or key" : "Choose a key or direction", NULL, 0, 0);
         if (position && input.type == NM_POSITION && input.x > 0 && input.x < COLNO && input.y >= 0 && input.y < ROWNO) {
             coordxy *x = va_arg(a, coordxy *), *y = va_arg(a, coordxy *); int *mod = va_arg(a, int *);

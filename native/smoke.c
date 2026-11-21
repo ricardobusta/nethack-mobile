@@ -34,6 +34,7 @@ int main(int argc, char **argv) {
     int first[256], commands = 0, maps = 0, restored = 0, ended = 0, tile_types = 0, tiles[4096] = {0};
     int restore_messages = 0, postmortem = 0, postmortem_prompts = 0, normalized_outcome = 0;
     int64_t latest_turn = 0, inventory_turn = 0;
+    int level_identity_received = 0;
     int death_checkpoint = argc == 3 && !strcmp(argv[2], "--death-checkpoint");
     int death_test = death_checkpoint || (argc == 3 && !strcmp(argv[2], "--death"));
     int checkpoint = argc == 3 && !strcmp(argv[2], "--checkpoint");
@@ -56,7 +57,13 @@ int main(int argc, char **argv) {
             }
         }
         if (e.type == NM_PHASE && e.values[0] == NM_POSTMORTEM) { postmortem = 1; nm_suspend(); }
-        if (e.type == NM_READY) latest_turn = e.values[2];
+        if (e.type == NM_READY) {
+            latest_turn = e.values[2];
+            if (e.values[5]) {
+                assert(e.values[3] >= 0 && e.values[4] > 0);
+                level_identity_received = 1;
+            }
+        }
         if (e.type == NM_GLYPH) {
             ++maps;
             if (e.values[4] < 0 || e.values[4] >= total_tiles_used || e.values[4] >= 4096) { fprintf(stderr, "Invalid tile mapping\n"); nm_stop(); return 9; }
@@ -76,6 +83,7 @@ int main(int argc, char **argv) {
             nm_input input = {0}; input.request = e.request; input.type = NM_KEY; input.key = ' ';
             switch (e.values[0]) {
             case 0:
+                assert(level_identity_received);
                 ++commands;
                 if (death_test) { input.key = (commands % 2) ? 'm' : '.'; break; }
                 if (commands == 1) inventory_turn = latest_turn;

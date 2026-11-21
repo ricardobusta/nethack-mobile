@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TESTS = (
-    'postmortem_smoke', 'log_smoke', 'widget_smoke', 'scroll_smoke', 'menu_smoke',
+    'postmortem_smoke', 'log_smoke', 'widget_smoke', 'scroll_smoke', 'menu_smoke', 'camera_smoke',
     'character_smoke', 'death_smoke', 'ui_smoke',
 )
 
